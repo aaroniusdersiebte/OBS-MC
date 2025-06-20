@@ -122,32 +122,14 @@ class HotkeyUIManager {
       <div class="hotkey-content" id="hotkeyContent">
         <!-- Hotkeys/Decks will be rendered here -->
       </div>
-      
-      <!-- Hotkey Details Panel -->
-      <div class="hotkey-details-panel" id="hotkeyDetailsPanel" style="display: none;">
-        <div class="panel-header">
-          <h3 id="detailsTitle">Hotkey Details</h3>
-          <button class="panel-close" id="closePanelBtn">×</button>
-        </div>
-        <div class="panel-content" id="panelContent">
-          <!-- Details content will be rendered here -->
-        </div>
-      </div>
     `;
 
     this.hotkeySection.appendChild(container);
 
     // Cache elements
     this.elements = {
-      content: document.getElementById('hotkeyContent'),
-      detailsPanel: document.getElementById('hotkeyDetailsPanel'),
-      detailsTitle: document.getElementById('detailsTitle'),
-      panelContent: document.getElementById('panelContent'),
-      closePanelBtn: document.getElementById('closePanelBtn')
+      content: document.getElementById('hotkeyContent')
     };
-
-    // Panel close button
-    this.elements.closePanelBtn?.addEventListener('click', () => this.hideDetailsPanel());
   }
 
   setupEventListeners() {
@@ -202,6 +184,17 @@ class HotkeyUIManager {
   }
 
   updateDisplay() {
+    // Throttle updates to prevent excessive re-renders
+    if (this.updateTimeout) {
+      clearTimeout(this.updateTimeout);
+    }
+    
+    this.updateTimeout = setTimeout(() => {
+      this.performUpdate();
+    }, 50); // 50ms throttle
+  }
+  
+  performUpdate() {
     this.updateStats();
     
     // Load saved card size on first display
@@ -263,6 +256,7 @@ class HotkeyUIManager {
               <span class="deck-info">(${deck.rows}×${deck.columns})</span>
             </h3>
             <div class="deck-actions">
+              <button class="deck-action-btn" onclick="window.hotkeyUIManager.createSubDeck('${deck.id}')" title="Unterdeck erstellen">📁➕</button>
               <button class="deck-action-btn" onclick="window.hotkeyUIManager.switchToDeck('${deck.id}')" title="Zu diesem Deck wechseln">🎯</button>
               <button class="deck-action-btn" onclick="window.hotkeyUIManager.editDeck('${deck.id}')" title="Deck bearbeiten">✏️</button>
               <button class="deck-action-btn" onclick="window.hotkeyUIManager.learnDeckHotkeys('${deck.id}')" title="Deck-Hotkeys lernen">🎓</button>
@@ -294,7 +288,6 @@ class HotkeyUIManager {
     }
 
     this.elements.content.innerHTML = html;
-    this.setupHotkeyInteractions();
   }
 
   renderHotkeyCard(hotkey) {
@@ -336,7 +329,6 @@ class HotkeyUIManager {
     for (let i = 0; i < totalSlots; i++) {
       const row = Math.floor(i / deck.columns);
       const col = i % deck.columns;
-      const position = { row, col };
       
       const hotkey = deckHotkeys.find(h => 
         h.position && h.position.row === row && h.position.col === col
@@ -347,7 +339,8 @@ class HotkeyUIManager {
           <div class="deck-slot occupied" 
                data-position="${row},${col}"
                data-hotkey-id="${hotkey.id}"
-               onclick="window.hotkeyUIManager.selectHotkey('${hotkey.id}')">
+               onclick="window.hotkeyUIManager.handleCardClick(event, '${hotkey.id}')"
+               oncontextmenu="window.hotkeyUIManager.handleCardRightClick(event, '${hotkey.id}')">
             <div class="slot-content">
               <div class="slot-name">${hotkey.name}</div>
               <div class="slot-trigger">${this.getShortTriggerText(hotkey.triggers[0])}</div>
@@ -396,122 +389,30 @@ class HotkeyUIManager {
     `;
   }
 
-  // ===== DECKS VIEW =====
-
-  renderDecksView() {
-    if (!this.elements.content) return;
-
-    const decks = this.hotkeyManager.getAllDecks();
-    const currentDeck = this.hotkeyManager.getCurrentDeck();
-    const breadcrumb = this.getDeckBreadcrumb();
-
-    if (decks.length === 0) {
-      this.elements.content.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-icon">🎛️</div>
-          <h3>Keine Decks vorhanden</h3>
-          <p>Decks ermöglichen es, Hotkeys in vordefinierten Anordnungen zu organisieren</p>
-          <div class="empty-actions">
-            <button class="btn-primary" onclick="window.hotkeyUIManager.showCreateDeckDialog()">Erstes Deck erstellen</button>
-          </div>
-        </div>
-      `;
-      return;
-    }
-
-    let html = `
-      <div class="decks-overview">
-        <div class="deck-navigation">
-          ${breadcrumb ? `
-            <div class="current-deck-indicator">
-              <span class="indicator-label">Aktiver Pfad:</span>
-              <span class="current-deck-name">${breadcrumb}</span>
-              ${currentDeck && currentDeck.isSubDeck ? `
-                <button class="back-btn" onclick="window.hotkeyUIManager.backToMainDeck()" title="Zurück zum Haupt-Deck">⬅ Zurück</button>
-              ` : ''}
-            </div>
-          ` : ''}
-        </div>
-        
-        <div class="decks-grid">
-          ${decks.map(deck => this.renderDeckOverviewCard(deck)).join('')}
-        </div>
-      </div>
-    `;
-
-    this.elements.content.innerHTML = html;
-  }
-
-  renderDeckOverviewCard(deck) {
-    const hotkeyCount = this.hotkeyManager.getHotkeysByDeck(deck.id).length;
-    const totalSlots = deck.rows * deck.columns;
-    const isCurrent = this.hotkeyManager.getCurrentDeck()?.id === deck.id;
-
-    return `
-      <div class="deck-overview-card ${isCurrent ? 'current' : ''}" data-deck-id="${deck.id}">
-        <div class="deck-card-header">
-          <h3 class="deck-card-title">${deck.name}</h3>
-          <div class="deck-type-badge ${deck.isSubDeck ? 'sub-deck' : 'main-deck'}">
-            ${deck.isSubDeck ? 'Unter-Deck' : 'Haupt-Deck'}
-          </div>
-        </div>
-        
-        <div class="deck-card-body">
-          <div class="deck-preview">
-            <div class="preview-grid" style="grid-template-columns: repeat(${Math.min(deck.columns, 4)}, 1fr);">
-              ${this.renderDeckPreview(deck, hotkeyCount)}
-            </div>
-          </div>
-          
-          <div class="deck-stats">
-            <span class="stat">${hotkeyCount}/${totalSlots} Slots belegt</span>
-            <span class="stat">${deck.rows}×${deck.columns} Layout</span>
-          </div>
-          
-          ${deck.description ? `<div class="deck-description">${deck.description}</div>` : ''}
-        </div>
-        
-        <div class="deck-card-actions">
-          <button class="deck-card-btn primary" onclick="window.hotkeyUIManager.switchToDeck('${deck.id}')">
-            ${isCurrent ? '✓ Aktiv' : 'Aktivieren'}
-          </button>
-          <button class="deck-card-btn" onclick="window.hotkeyUIManager.editDeck('${deck.id}')" title="Bearbeiten">✏️</button>
-          <button class="deck-card-btn" onclick="window.hotkeyUIManager.learnDeckHotkeys('${deck.id}')" title="Hotkeys lernen">🎓</button>
-          <button class="deck-card-btn" onclick="window.hotkeyUIManager.duplicateDeck('${deck.id}')" title="Duplizieren">📋</button>
-          <button class="deck-card-btn danger" onclick="window.hotkeyUIManager.deleteDeck('${deck.id}')" title="Löschen">🗑️</button>
-        </div>
-      </div>
-    `;
-  }
-
-  renderDeckPreview(deck, hotkeyCount) {
-    const maxPreviewSlots = 16;
-    const totalSlots = Math.min(deck.rows * deck.columns, maxPreviewSlots);
-    let html = '';
-
-    for (let i = 0; i < totalSlots; i++) {
-      const hasHotkey = i < hotkeyCount;
-      html += `<div class="preview-slot ${hasHotkey ? 'occupied' : 'empty'}"></div>`;
-    }
-
-    return html;
-  }
-
   // ===== CARD INTERACTION HANDLERS =====
 
   handleCardClick(event, hotkeyId) {
     event.preventDefault();
     event.stopPropagation();
     
-    // Left click executes the hotkey
+    // Visual feedback for this specific card only
+    const card = event.currentTarget;
+    
+    // Prevent multiple simultaneous animations
+    if (card.classList.contains('executing')) {
+      return;
+    }
+    
+    // Add bounce animation only to this card
+    card.classList.add('executing');
+    
+    // Execute the hotkey
     this.executeHotkey(hotkeyId);
     
-    // Visual feedback
-    const card = event.currentTarget;
-    card.classList.add('executing');
+    // Remove animation after completion
     setTimeout(() => {
       card.classList.remove('executing');
-    }, 300);
+    }, 500);
     
     // Show execution feedback
     const hotkey = this.hotkeyManager.getHotkeyById(hotkeyId);
@@ -524,184 +425,125 @@ class HotkeyUIManager {
     event.preventDefault();
     event.stopPropagation();
     
-    // Right click shows context menu
-    this.showHotkeyContextMenu(event, hotkeyId);
+    // Right click shows context popup
+    this.showHotkeyContextPopup(event, hotkeyId);
   }
 
-  showHotkeyContextMenu(event, hotkeyId) {
+  // NEW: Show hotkey context as popup
+  showHotkeyContextPopup(event, hotkeyId) {
     const hotkey = this.hotkeyManager.getHotkeyById(hotkeyId);
     if (!hotkey) return;
 
-    // Remove existing context menu
-    const existingMenu = document.querySelector('.hotkey-context-menu');
-    if (existingMenu) {
-      existingMenu.remove();
+    // Remove existing popups
+    const existingPopup = document.querySelector('.hotkey-context-popup');
+    if (existingPopup) {
+      existingPopup.remove();
     }
 
-    const contextMenu = document.createElement('div');
-    contextMenu.className = 'hotkey-context-menu';
-    contextMenu.innerHTML = `
-      <div class="context-menu-item" data-action="execute">
-        <span class="menu-icon">▶️</span>
-        <span class="menu-text">Ausführen</span>
+    const popup = document.createElement('div');
+    popup.className = 'hotkey-context-popup';
+    popup.innerHTML = `
+      <div class="popup-header">
+        <h4>${hotkey.name}</h4>
+        <button class="popup-close" onclick="this.parentElement.parentElement.remove()">×</button>
       </div>
-      <div class="context-menu-item" data-action="edit">
-        <span class="menu-icon">✏️</span>
-        <span class="menu-text">Bearbeiten</span>
-      </div>
-      <div class="context-menu-item" data-action="duplicate">
-        <span class="menu-icon">📋</span>
-        <span class="menu-text">Duplizieren</span>
-      </div>
-      <div class="context-menu-item" data-action="toggle">
-        <span class="menu-icon">${hotkey.enabled ? '🔅' : '🔆'}</span>
-        <span class="menu-text">${hotkey.enabled ? 'Deaktivieren' : 'Aktivieren'}</span>
-      </div>
-      <div class="context-menu-separator"></div>
-      <div class="context-menu-item danger" data-action="delete">
-        <span class="menu-icon">🗑️</span>
-        <span class="menu-text">Löschen</span>
+      <div class="popup-content">
+        <div class="popup-section">
+          <div class="popup-actions">
+            <button class="popup-btn primary" onclick="window.hotkeyUIManager.executeHotkey('${hotkeyId}'); this.closest('.hotkey-context-popup').remove();">
+              ▶️ Ausführen
+            </button>
+            <button class="popup-btn" onclick="window.hotkeyUIManager.editHotkeyPopup('${hotkeyId}')">
+              ✏️ Bearbeiten
+            </button>
+            <button class="popup-btn" onclick="window.hotkeyUIManager.duplicateHotkey('${hotkeyId}'); this.closest('.hotkey-context-popup').remove();">
+              📋 Duplizieren
+            </button>
+          </div>
+        </div>
+        <div class="popup-section">
+          <h5>Status</h5>
+          <div class="status-toggle">
+            <label class="toggle-switch">
+              <input type="checkbox" ${hotkey.enabled ? 'checked' : ''} onchange="window.hotkeyUIManager.toggleHotkey('${hotkeyId}')">
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">${hotkey.enabled ? 'Aktiviert' : 'Deaktiviert'}</span>
+            </label>
+          </div>
+        </div>
+        <div class="popup-section">
+          <h5>Trigger (${hotkey.triggers.length})</h5>
+          <div class="trigger-list">
+            ${hotkey.triggers.length === 0 ? 
+              '<p class="empty-text">Keine Trigger</p>' :
+              hotkey.triggers.map(trigger => `
+                <div class="trigger-chip">
+                  <span class="trigger-icon">${trigger.type === 'midi' ? '🎹' : trigger.type === 'keyboard' ? '⌨️' : '🖱️'}</span>
+                  <span class="trigger-desc">${trigger.data.description}</span>
+                </div>
+              `).join('')
+            }
+          </div>
+        </div>
+        <div class="popup-section">
+          <h5>Aktionen (${hotkey.actions.length})</h5>
+          <div class="action-list">
+            ${hotkey.actions.length === 0 ? 
+              '<p class="empty-text">Keine Aktionen</p>' :
+              hotkey.actions.map((action, index) => `
+                <div class="action-chip">
+                  <span class="action-order">${index + 1}.</span>
+                  <span class="action-desc">${this.getActionDisplayText(action)}</span>
+                </div>
+              `).join('')
+            }
+          </div>
+        </div>
+        <div class="popup-section danger">
+          <button class="popup-btn danger" onclick="if(confirm('Hotkey wirklich löschen?')) { window.hotkeyUIManager.deleteHotkey('${hotkeyId}'); this.closest('.hotkey-context-popup').remove(); }">
+            🗑️ Löschen
+          </button>
+        </div>
       </div>
     `;
 
-    // Position menu
-    const x = Math.min(event.clientX, window.innerWidth - 200);
-    const y = Math.min(event.clientY, window.innerHeight - 250);
+    // Smart positioning
+    const rect = event.currentTarget.getBoundingClientRect();
+    popup.style.position = 'fixed';
+    popup.style.left = `${rect.right + 10}px`;
+    popup.style.top = `${rect.top}px`;
+    popup.style.zIndex = '10000';
     
-    contextMenu.style.cssText = `
-      position: fixed;
-      left: ${x}px;
-      top: ${y}px;
-      z-index: 10000;
-    `;
+    document.body.appendChild(popup);
 
-    document.body.appendChild(contextMenu);
-
-    // Add event listeners
-    contextMenu.addEventListener('click', (e) => {
-      const action = e.target.closest('.context-menu-item')?.dataset.action;
-      if (action) {
-        this.handleContextMenuAction(hotkeyId, action);
-        contextMenu.remove();
-      }
-    });
-
-    // Close menu when clicking outside
-    const closeMenu = (e) => {
-      if (!contextMenu.contains(e.target)) {
-        contextMenu.remove();
-        document.removeEventListener('click', closeMenu);
-      }
-    };
-    
+    // Close on outside click
     setTimeout(() => {
-      document.addEventListener('click', closeMenu);
+      const closeHandler = (e) => {
+        if (!popup.contains(e.target)) {
+          popup.remove();
+          document.removeEventListener('click', closeHandler);
+        }
+      };
+      document.addEventListener('click', closeHandler);
     }, 100);
   }
 
-  handleContextMenuAction(hotkeyId, action) {
-    switch (action) {
-      case 'execute':
-        this.executeHotkey(hotkeyId);
-        break;
-      case 'edit':
-        this.editHotkey(hotkeyId);
-        break;
-      case 'duplicate':
-        this.duplicateHotkey(hotkeyId);
-        break;
-      case 'toggle':
-        this.toggleHotkey(hotkeyId);
-        break;
-      case 'delete':
-        this.deleteHotkey(hotkeyId);
-        break;
-    }
-  }
-
-  setupHotkeyInteractions() {
-    // Make hotkey cards draggable for reordering
-    const hotkeyCards = this.elements.content.querySelectorAll('.hotkey-card');
-    hotkeyCards.forEach(card => {
-      card.draggable = true;
-      card.addEventListener('dragstart', this.handleDragStart.bind(this));
-      card.addEventListener('dragover', this.handleDragOver.bind(this));
-      card.addEventListener('drop', this.handleDrop.bind(this));
-    });
-
-    // Make deck slots accept drops
-    const deckSlots = this.elements.content.querySelectorAll('.deck-slot');
-    deckSlots.forEach(slot => {
-      slot.addEventListener('dragover', this.handleDragOver.bind(this));
-      slot.addEventListener('drop', this.handleDrop.bind(this));
-    });
-  }
-
-  handleDragStart(event) {
-    const hotkeyId = event.target.dataset.hotkeyId;
-    if (hotkeyId) {
-      this.draggedHotkey = hotkeyId;
-      event.dataTransfer.setData('text/plain', hotkeyId);
-      event.target.classList.add('dragging');
-    }
-  }
-
-  handleDragOver(event) {
-    event.preventDefault();
-    event.target.classList.add('drag-over');
-  }
-
-  handleDrop(event) {
-    event.preventDefault();
-    event.target.classList.remove('drag-over');
-
-    const hotkeyId = this.draggedHotkey || event.dataTransfer.getData('text/plain');
-    if (!hotkeyId) return;
-
-    // Handle dropping on deck slot
-    if (event.target.classList.contains('deck-slot')) {
-      this.handleDropOnDeckSlot(event.target, hotkeyId);
-    }
-
-    // Cleanup
-    this.draggedHotkey = null;
-    document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
-  }
-
-  handleDropOnDeckSlot(slot, hotkeyId) {
-    const position = slot.dataset.position;
-    const deckId = slot.closest('[data-deck-id]')?.dataset.deckId;
-    
-    if (!position || !deckId) return;
-
-    const [row, col] = position.split(',').map(Number);
-    
-    // Update hotkey position
-    this.hotkeyManager.updateHotkey(hotkeyId, {
-      deckId: deckId,
-      position: { row, col }
-    });
-
-    this.updateDisplay();
-    this.uiManager.showSuccessMessage('Hotkey zu Deck-Position hinzugefügt!');
-  }
-
   // ===== HOTKEY ACTIONS =====
-
-  selectHotkey(hotkeyId) {
-    this.selectedHotkey = hotkeyId;
-    this.showHotkeyDetails(hotkeyId);
-  }
 
   executeHotkey(hotkeyId) {
     this.hotkeyManager.executeHotkey(hotkeyId);
   }
 
-  editHotkey(hotkeyId) {
+  editHotkeyPopup(hotkeyId) {
+    // Close the context popup first
+    const popup = document.querySelector('.hotkey-context-popup');
+    if (popup) popup.remove();
+    
+    // Show the modern edit dialog (same as create)
     const hotkey = this.hotkeyManager.getHotkeyById(hotkeyId);
-    if (!hotkey) return;
-
-    this.showHotkeyEditDialog(hotkey);
+    if (hotkey && window.hotkeyDialogManager) {
+      window.hotkeyDialogManager.showHotkeyEditDialog(hotkey);
+    }
   }
 
   toggleHotkey(hotkeyId) {
@@ -709,7 +551,7 @@ class HotkeyUIManager {
     if (!hotkey) return;
 
     this.hotkeyManager.updateHotkey(hotkeyId, { enabled: !hotkey.enabled });
-    this.uiManager.showSuccessMessage(`Hotkey ${hotkey.enabled ? 'aktiviert' : 'deaktiviert'}`);
+    this.uiManager.showSuccessMessage(`Hotkey ${hotkey.enabled ? 'deaktiviert' : 'aktiviert'}`);
   }
 
   deleteHotkey(hotkeyId) {
@@ -718,9 +560,36 @@ class HotkeyUIManager {
 
     if (confirm(`Hotkey "${hotkey.name}" wirklich löschen?`)) {
       this.hotkeyManager.deleteHotkey(hotkeyId);
-      this.hideDetailsPanel();
       this.uiManager.showSuccessMessage('Hotkey gelöscht');
     }
+  }
+
+  duplicateHotkey(hotkeyId) {
+    const hotkey = this.hotkeyManager.getHotkeyById(hotkeyId);
+    if (!hotkey) return;
+
+    const newHotkey = this.hotkeyManager.createHotkey({
+      name: `${hotkey.name} (Kopie)`,
+      description: hotkey.description,
+      deckId: hotkey.deckId,
+      position: null
+    });
+
+    // Copy triggers
+    hotkey.triggers.forEach(trigger => {
+      this.hotkeyManager.addTriggerToHotkey(newHotkey.id, trigger);
+    });
+
+    // Copy actions
+    hotkey.actions.forEach(action => {
+      this.hotkeyManager.addActionToHotkey(newHotkey.id, {
+        type: action.type,
+        data: { ...action.data },
+        delay: action.delay
+      });
+    });
+
+    this.uiManager.showSuccessMessage(`Hotkey "${hotkey.name}" dupliziert!`);
   }
 
   createHotkeyForSlot(deckId, row, col) {
@@ -732,109 +601,53 @@ class HotkeyUIManager {
 
   // ===== DECK ACTIONS =====
 
-  // ===== DECK MANAGEMENT WITH ACTIVATION LOGIC =====
+  createSubDeck(parentDeckId) {
+    const parentDeck = this.hotkeyManager.getDeckById(parentDeckId);
+    if (!parentDeck) return;
+
+    const subDeckName = prompt(`Name für das Unterdeck von "${parentDeck.name}":`);
+    if (!subDeckName) return;
+
+    const subDeck = this.hotkeyManager.createDeck({
+      name: subDeckName,
+      description: `Unterdeck von ${parentDeck.name}`,
+      rows: parentDeck.rows,
+      columns: parentDeck.columns,
+      parentDeckId: parentDeckId
+    });
+
+    this.uiManager.showSuccessMessage(`Unterdeck "${subDeckName}" erstellt!`);
+  }
 
   switchToDeck(deckId) {
     const deck = this.hotkeyManager.getDeckById(deckId);
     if (!deck) return;
 
-    // Only allow switching to main decks or sub-decks from main decks
-    const currentDeck = this.hotkeyManager.getCurrentDeck();
-    
-    if (deck.isSubDeck) {
-      // Sub-deck can only be activated from a main deck
-      if (!currentDeck || currentDeck.isSubDeck) {
-        this.uiManager.showErrorMessage('Deck-Wechsel', 'Unter-Decks können nur von Haupt-Decks aus aktiviert werden.');
-        return;
-      }
-    }
-
     this.hotkeyManager.switchToDeck(deckId);
     
-    // Show navigation feedback
+    // Visual update for deck switching
+    this.updateDisplay();
+    
     const deckType = deck.isSubDeck ? 'Unter-Deck' : 'Haupt-Deck';
     this.uiManager.showSuccessMessage(`${deckType} "${deck.name}" aktiviert!`);
-  }
-
-  // Enhanced deck switching with breadcrumb navigation
-  getDeckBreadcrumb() {
-    const currentDeck = this.hotkeyManager.getCurrentDeck();
-    if (!currentDeck) return '';
-
-    if (currentDeck.isSubDeck && currentDeck.parentDeckId) {
-      const parentDeck = this.hotkeyManager.getDeckById(currentDeck.parentDeckId);
-      return `${parentDeck?.name || 'Haupt-Deck'} → ${currentDeck.name}`;
-    }
-
-    return currentDeck.name;
-  }
-
-  // Back to main deck functionality
-  backToMainDeck() {
-    const currentDeck = this.hotkeyManager.getCurrentDeck();
-    
-    if (currentDeck && currentDeck.isSubDeck && currentDeck.parentDeckId) {
-      this.switchToDeck(currentDeck.parentDeckId);
-    } else {
-      // Switch to first main deck or deactivate
-      const mainDecks = this.hotkeyManager.getMainDecks();
-      if (mainDecks.length > 0) {
-        this.switchToDeck(mainDecks[0].id);
-      } else {
-        this.hotkeyManager.switchToDeck(null);
-        this.uiManager.showSuccessMessage('Alle Decks deaktiviert');
-      }
-    }
   }
 
   editDeck(deckId) {
     const deck = this.hotkeyManager.getDeckById(deckId);
     if (!deck) return;
 
-    this.showDeckEditDialog(deck);
-  }
-
-  deleteDeck(deckId) {
-    const deck = this.hotkeyManager.getDeckById(deckId);
-    if (!deck) return;
-
-    if (confirm(`Deck "${deck.name}" wirklich löschen? Alle Hotkeys werden zu Einzelhotkeys.`)) {
-      this.hotkeyManager.deleteDeck(deckId);
-      this.uiManager.showSuccessMessage('Deck gelöscht');
+    if (window.hotkeyDialogManager) {
+      window.hotkeyDialogManager.showDeckEditDialog(deck);
     }
-  }
-
-  duplicateDeck(deckId) {
-    const deck = this.hotkeyManager.getDeckById(deckId);
-    if (!deck) return;
-
-    const newDeck = this.hotkeyManager.createDeck({
-      name: `${deck.name} (Kopie)`,
-      description: deck.description,
-      rows: deck.rows,
-      columns: deck.columns,
-      parentDeckId: deck.parentDeckId
-    });
-
-    // Copy hotkeys
-    const deckHotkeys = this.hotkeyManager.getHotkeysByDeck(deckId);
-    deckHotkeys.forEach(hotkey => {
-      this.hotkeyManager.createHotkey({
-        name: `${hotkey.name} (Kopie)`,
-        description: hotkey.description,
-        deckId: newDeck.id,
-        position: hotkey.position
-      });
-    });
-
-    this.uiManager.showSuccessMessage('Deck dupliziert!');
   }
 
   learnDeckHotkeys(deckId) {
     const deck = this.hotkeyManager.getDeckById(deckId);
     if (!deck) return;
 
-    this.showDeckLearningDialog(deck);
+    if (window.hotkeyDialogManager) {
+      window.hotkeyDialogManager.showDeckLearningDialog(deck);
+    }
   }
 
   // ===== UTILITY METHODS =====
@@ -867,106 +680,6 @@ class HotkeyUIManager {
     }
   }
 
-  // ===== EVENT HANDLERS =====
-
-  onDeckSwitched(deck) {
-    this.updateDisplay();
-    this.triggerHapticFeedback();
-  }
-
-  onHotkeyExecuted(data) {
-    if (data.success) {
-      this.triggerHapticFeedback();
-    }
-    
-    // Update last triggered time in UI
-    this.updateDisplay();
-  }
-
-  triggerHapticFeedback() {
-    // Visual feedback animation
-    document.body.classList.add('hotkey-triggered');
-    setTimeout(() => {
-      document.body.classList.remove('hotkey-triggered');
-    }, 200);
-  }
-
-  // ===== DIALOG METHODS =====
-
-  showHotkeyDetails(hotkeyId) {
-    const hotkey = this.hotkeyManager.getHotkeyById(hotkeyId);
-    if (!hotkey) return;
-
-    this.elements.detailsTitle.textContent = hotkey.name;
-    this.elements.panelContent.innerHTML = this.renderHotkeyDetailsContent(hotkey);
-    this.elements.detailsPanel.style.display = 'block';
-  }
-
-  renderHotkeyDetailsContent(hotkey) {
-    return `
-      <div class="hotkey-details">
-        <div class="detail-section">
-          <h4>Grundinformationen</h4>
-          <div class="detail-item">
-            <label>Name:</label>
-            <span>${hotkey.name}</span>
-          </div>
-          <div class="detail-item">
-            <label>Beschreibung:</label>
-            <span>${hotkey.description || 'Keine Beschreibung'}</span>
-          </div>
-          <div class="detail-item">
-            <label>Status:</label>
-            <span class="status ${hotkey.enabled ? 'enabled' : 'disabled'}">
-              ${hotkey.enabled ? '✓ Aktiviert' : '✗ Deaktiviert'}
-            </span>
-          </div>
-          <div class="detail-item">
-            <label>Ausführungen:</label>
-            <span>${hotkey.triggerCount}</span>
-          </div>
-        </div>
-
-        <div class="detail-section">
-          <h4>Trigger (${hotkey.triggers.length})</h4>
-          ${hotkey.triggers.length === 0 ? 
-            '<p class="empty-message">Keine Trigger konfiguriert</p>' :
-            hotkey.triggers.map(trigger => `
-              <div class="trigger-item">
-                <span class="trigger-type">${this.getTriggerDisplayText(trigger)}</span>
-                <button class="remove-btn" onclick="window.hotkeyUIManager.removeTrigger('${hotkey.id}', '${trigger.type}')">×</button>
-              </div>
-            `).join('')
-          }
-          <button class="add-btn" onclick="window.hotkeyUIManager.addTriggerToHotkey('${hotkey.id}')">+ Trigger hinzufügen</button>
-        </div>
-
-        <div class="detail-section">
-          <h4>Aktionen (${hotkey.actions.length})</h4>
-          ${hotkey.actions.length === 0 ? 
-            '<p class="empty-message">Keine Aktionen konfiguriert</p>' :
-            hotkey.actions.map((action, index) => `
-              <div class="action-item" data-action-id="${action.id}">
-                <span class="action-order">${index + 1}.</span>
-                <span class="action-type">${this.getActionDisplayText(action)}</span>
-                ${action.delay > 0 ? `<span class="action-delay">(${action.delay}ms Verzögerung)</span>` : ''}
-                <button class="remove-btn" onclick="window.hotkeyUIManager.removeAction('${hotkey.id}', '${action.id}')">×</button>
-              </div>
-            `).join('')
-          }
-          <button class="add-btn" onclick="window.hotkeyUIManager.addActionToHotkey('${hotkey.id}')">+ Aktion hinzufügen</button>
-        </div>
-
-        <div class="detail-actions">
-          <button class="btn-primary" onclick="window.hotkeyUIManager.executeHotkey('${hotkey.id}')">▶️ Ausführen</button>
-          <button class="btn-secondary" onclick="window.hotkeyUIManager.editHotkey('${hotkey.id}')">✏️ Bearbeiten</button>
-          <button class="btn-secondary" onclick="window.hotkeyUIManager.duplicateHotkey('${hotkey.id}')">📋 Duplizieren</button>
-          <button class="btn-danger" onclick="window.hotkeyUIManager.deleteHotkey('${hotkey.id}')">🗑️ Löschen</button>
-        </div>
-      </div>
-    `;
-  }
-
   getActionDisplayText(action) {
     switch (action.type) {
       case 'obs_scene_switch':
@@ -982,18 +695,69 @@ class HotkeyUIManager {
         return `Lautstärke: ${action.data.sourceName} → ${Math.round(action.data.volume * 100)}%`;
       case 'audio_mute':
         return `${action.data.muted ? 'Stumm' : 'Laut'}: ${action.data.sourceName}`;
+      case 'obs_recording_toggle':
+        return 'Aufnahme umschalten';
+      case 'obs_streaming_toggle':
+        return 'Stream umschalten';
+      case 'delay':
+        return `Verzögerung: ${action.data.duration}ms`;
       default:
         return action.type;
     }
   }
 
-  hideDetailsPanel() {
-    this.elements.detailsPanel.style.display = 'none';
-    this.selectedHotkey = null;
+  // ===== EVENT HANDLERS =====
+
+  onDeckSwitched(deck) {
+    this.updateDisplay();
+    this.triggerHapticFeedback();
+  }
+
+  onHotkeyExecuted(data) {
+    if (data.success) {
+      // Find and animate the specific hotkey card if visible
+      const hotkeyCard = document.querySelector(`[data-hotkey-id="${data.hotkey.id}"]`);
+      if (hotkeyCard && !hotkeyCard.classList.contains('executing')) {
+        hotkeyCard.classList.add('executing');
+        setTimeout(() => {
+          hotkeyCard.classList.remove('executing');
+        }, 500);
+      }
+      
+      this.triggerHapticFeedback();
+    }
+    
+    // Update last triggered time in UI
+    this.updateDisplay();
+  }
+
+  triggerHapticFeedback() {
+    // Vibration for mobile devices
+    if (navigator.vibrate) {
+      navigator.vibrate([30, 10, 30]);
+    }
+    
+    // Audio feedback (optional - very short beep)
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+      gainNode.gain.setValueAtTime(0.05, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
+      
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.1);
+    } catch (e) {
+      // Audio feedback not available, silent fallback
+    }
   }
 
   // ===== DIALOG METHODS =====
-  // These delegate to the dialog manager
 
   showCreateHotkeyDialog(options = {}) {
     if (window.hotkeyDialogManager) {
@@ -1019,129 +783,19 @@ class HotkeyUIManager {
     }
   }
 
-  showHotkeyEditDialog(hotkey) {
-    if (window.hotkeyDialogManager) {
-      window.hotkeyDialogManager.showHotkeyEditDialog(hotkey);
-    }
-  }
-
-  showDeckEditDialog(deck) {
-    if (window.hotkeyDialogManager) {
-      window.hotkeyDialogManager.showDeckEditDialog(deck);
-    }
-  }
-
-  showDeckLearningDialog(deck) {
-    if (window.hotkeyDialogManager) {
-      window.hotkeyDialogManager.showDeckLearningDialog(deck);
-    }
-  }
-
-  // ===== ADDITIONAL HELPER METHODS =====
-
-  duplicateHotkey(hotkeyId) {
-    const hotkey = this.hotkeyManager.getHotkeyById(hotkeyId);
-    if (!hotkey) return;
-
-    const newHotkey = this.hotkeyManager.createHotkey({
-      name: `${hotkey.name} (Kopie)`,
-      description: hotkey.description,
-      deckId: hotkey.deckId,
-      position: null // Will be assigned to next available position
-    });
-
-    // Copy triggers
-    hotkey.triggers.forEach(trigger => {
-      this.hotkeyManager.addTriggerToHotkey(newHotkey.id, trigger);
-    });
-
-    // Copy actions
-    hotkey.actions.forEach(action => {
-      this.hotkeyManager.addActionToHotkey(newHotkey.id, {
-        type: action.type,
-        data: { ...action.data },
-        delay: action.delay
-      });
-    });
-
-    this.uiManager.showSuccessMessage(`Hotkey "${hotkey.name}" dupliziert!`);
-  }
-
-  removeTrigger(hotkeyId, triggerType) {
-    this.hotkeyManager.removeTriggerFromHotkey(hotkeyId, triggerType);
-    this.showHotkeyDetails(hotkeyId); // Refresh details panel
-  }
-
-  removeAction(hotkeyId, actionId) {
-    this.hotkeyManager.removeActionFromHotkey(hotkeyId, actionId);
-    this.showHotkeyDetails(hotkeyId); // Refresh details panel
-  }
-
-  addTriggerToHotkey(hotkeyId) {
-    this.hotkeyManager.startLearningMode((trigger) => {
-      this.hotkeyManager.addTriggerToHotkey(hotkeyId, trigger);
-      this.showHotkeyDetails(hotkeyId); // Refresh details panel
-      this.uiManager.showSuccessMessage('Trigger hinzugefügt!');
-    }, hotkeyId);
-  }
-
-  addActionToHotkey(hotkeyId) {
-    // Show a simple action selector
-    const actionType = prompt('Aktion auswählen:\n\n1. obs_scene_switch - Szene wechseln\n2. obs_recording_toggle - Aufnahme umschalten\n3. obs_streaming_toggle - Stream umschalten\n4. audio_mute - Audio stumm schalten\n\nGib die Nummer ein:');
-    
-    const actionMap = {
-      '1': 'obs_scene_switch',
-      '2': 'obs_recording_toggle', 
-      '3': 'obs_streaming_toggle',
-      '4': 'audio_mute'
-    };
-    
-    const selectedType = actionMap[actionType];
-    if (!selectedType) return;
-    
-    let actionData = {};
-    
-    // Get action-specific data
-    if (selectedType === 'obs_scene_switch') {
-      const scenes = window.obsManager?.getScenes() || [];
-      if (scenes.length === 0) {
-        this.uiManager.showErrorMessage('Keine Szenen', 'Keine OBS-Szenen verfügbar');
-        return;
-      }
-      const sceneName = prompt(`Szene auswählen:\n\n${scenes.map((s, i) => `${i+1}. ${s.sceneName}`).join('\n')}\n\nGib die Nummer ein:`);
-      const sceneIndex = parseInt(sceneName) - 1;
-      if (sceneIndex >= 0 && sceneIndex < scenes.length) {
-        actionData = { sceneName: scenes[sceneIndex].sceneName };
-      } else {
-        return;
-      }
-    } else if (selectedType === 'audio_mute') {
-      const sources = window.audioManager?.getAllAudioSources() || [];
-      if (sources.length === 0) {
-        this.uiManager.showErrorMessage('Keine Audio-Quellen', 'Keine Audio-Quellen verfügbar');
-        return;
-      }
-      const sourceName = prompt(`Audio-Quelle auswählen:\n\n${sources.map((s, i) => `${i+1}. ${s.name}`).join('\n')}\n\nGib die Nummer ein:`);
-      const sourceIndex = parseInt(sourceName) - 1;
-      if (sourceIndex >= 0 && sourceIndex < sources.length) {
-        actionData = { sourceName: sources[sourceIndex].name, muted: true };
-      } else {
-        return;
-      }
-    }
-    
-    this.hotkeyManager.addActionToHotkey(hotkeyId, {
-      type: selectedType,
-      data: actionData
-    });
-    
-    this.showHotkeyDetails(hotkeyId); // Refresh details panel
-    this.uiManager.showSuccessMessage('Aktion hinzugefügt!');
+  renderDecksView() {
+    // Implementation for deck view (simplified for now)
+    this.elements.content.innerHTML = '<p>Deck-Ansicht wird implementiert...</p>';
   }
 
   // ===== CLEANUP =====
 
   destroy() {
+    // Clear timeouts
+    if (this.updateTimeout) {
+      clearTimeout(this.updateTimeout);
+    }
+    
     // Remove event listeners and cleanup
     console.log('HotkeyUIManager: Cleaning up...');
   }

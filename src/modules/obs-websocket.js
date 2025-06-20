@@ -641,6 +641,215 @@ class OBSWebSocketManager {
     }
   }
 
+  // ===== SCENE ITEM MANAGEMENT FOR HOTKEYS =====
+
+  async setSceneItemEnabled(sceneName, sourceName, enabled) {
+    if (!this.isIdentified) {
+      throw new Error('OBS WebSocket not identified');
+    }
+
+    try {
+      // First get the scene item ID
+      const sceneItems = await this.obs.call('GetSceneItemList', {
+        sceneName: sceneName
+      });
+      
+      const sceneItem = sceneItems.sceneItems.find(item => 
+        item.sourceName === sourceName ||
+        item.inputName === sourceName
+      );
+      
+      if (!sceneItem) {
+        throw new Error(`Source "${sourceName}" not found in scene "${sceneName}"`);
+      }
+      
+      // Set the scene item enabled state
+      await this.obs.call('SetSceneItemEnabled', {
+        sceneName: sceneName,
+        sceneItemId: sceneItem.sceneItemId,
+        sceneItemEnabled: enabled
+      });
+      
+      console.log(`OBS: Set scene item ${sourceName} in ${sceneName} to ${enabled ? 'visible' : 'hidden'}`);
+      return true;
+    } catch (error) {
+      console.error(`Error setting scene item visibility for ${sourceName} in ${sceneName}:`, error);
+      throw error;
+    }
+  }
+
+  async setCurrentProgramScene(sceneName) {
+    if (!this.isIdentified) {
+      throw new Error('OBS WebSocket not identified');
+    }
+
+    try {
+      console.log('OBS: Setting current program scene to:', sceneName);
+      await this.obs.call('SetCurrentProgramScene', {
+        sceneName: sceneName
+      });
+      return true;
+    } catch (error) {
+      console.error(`Error setting program scene to ${sceneName}:`, error);
+      throw error;
+    }
+  }
+
+  async setSourceFilterEnabled(sourceName, filterName, enabled) {
+    if (!this.isIdentified) {
+      throw new Error('OBS WebSocket not identified');
+    }
+
+    try {
+      console.log(`OBS: Setting filter ${filterName} on ${sourceName} to ${enabled ? 'enabled' : 'disabled'}`);
+      await this.obs.call('SetSourceFilterEnabled', {
+        sourceName: sourceName,
+        filterName: filterName,
+        filterEnabled: enabled
+      });
+      return true;
+    } catch (error) {
+      console.error(`Error setting filter ${filterName} on ${sourceName}:`, error);
+      throw error;
+    }
+  }
+
+  async getRecordStatus() {
+    if (!this.isIdentified) {
+      throw new Error('OBS WebSocket not identified');
+    }
+
+    try {
+      const result = await this.obs.call('GetRecordStatus');
+      return result;
+    } catch (error) {
+      console.error('Error getting record status:', error);
+      throw error;
+    }
+  }
+
+  async startRecord() {
+    if (!this.isIdentified) {
+      throw new Error('OBS WebSocket not identified');
+    }
+
+    try {
+      console.log('OBS: Starting recording');
+      await this.obs.call('StartRecord');
+      return true;
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      throw error;
+    }
+  }
+
+  async stopRecord() {
+    if (!this.isIdentified) {
+      throw new Error('OBS WebSocket not identified');
+    }
+
+    try {
+      console.log('OBS: Stopping recording');
+      await this.obs.call('StopRecord');
+      return true;
+    } catch (error) {
+      console.error('Error stopping recording:', error);
+      throw error;
+    }
+  }
+
+  async getStreamStatus() {
+    if (!this.isIdentified) {
+      throw new Error('OBS WebSocket not identified');
+    }
+
+    try {
+      const result = await this.obs.call('GetStreamStatus');
+      return result;
+    } catch (error) {
+      console.error('Error getting stream status:', error);
+      throw error;
+    }
+  }
+
+  async startStream() {
+    if (!this.isIdentified) {
+      throw new Error('OBS WebSocket not identified');
+    }
+
+    try {
+      console.log('OBS: Starting stream');
+      await this.obs.call('StartStream');
+      return true;
+    } catch (error) {
+      console.error('Error starting stream:', error);
+      throw error;
+    }
+  }
+
+  async stopStream() {
+    if (!this.isIdentified) {
+      throw new Error('OBS WebSocket not identified');
+    }
+
+    try {
+      console.log('OBS: Stopping stream');
+      await this.obs.call('StopStream');
+      return true;
+    } catch (error) {
+      console.error('Error stopping stream:', error);
+      throw error;
+    }
+  }
+
+  // ===== ENHANCED DATA FETCHING FOR HOTKEY SUGGESTIONS =====
+
+  async getSourceFilters(sourceName) {
+    if (!this.isIdentified) {
+      throw new Error('OBS WebSocket not identified');
+    }
+
+    try {
+      const result = await this.obs.call('GetSourceFilterList', {
+        sourceName: sourceName
+      });
+      return result.filters || [];
+    } catch (error) {
+      console.error(`Error getting filters for ${sourceName}:`, error);
+      return [];
+    }
+  }
+
+  async getAllSources() {
+    if (!this.isIdentified) {
+      throw new Error('OBS WebSocket not identified');
+    }
+
+    try {
+      const result = await this.obs.call('GetInputList');
+      return result.inputs || [];
+    } catch (error) {
+      console.error('Error getting all sources:', error);
+      return [];
+    }
+  }
+
+  async getSceneItems(sceneName) {
+    if (!this.isIdentified) {
+      throw new Error('OBS WebSocket not identified');
+    }
+
+    try {
+      const result = await this.obs.call('GetSceneItemList', {
+        sceneName: sceneName
+      });
+      return result.sceneItems || [];
+    } catch (error) {
+      console.error(`Error getting scene items for ${sceneName}:`, error);
+      return [];
+    }
+  }
+
   // Event handlers
   handleVolumeMeters(data) {
     if (!data.inputs) return;

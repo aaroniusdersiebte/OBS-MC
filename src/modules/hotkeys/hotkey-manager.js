@@ -291,6 +291,35 @@ class HotkeyManager {
     if (!window.obsManager || !window.obsManager.isConnected) {
       throw new Error('OBS not connected');
     }
+    
+    // Handle toggle functionality
+    if (data.visible === 'toggle') {
+      try {
+        // Get current visibility state
+        const sceneItems = await window.obsManager.getSceneItems(data.sceneName);
+        const sceneItem = sceneItems.find(item => 
+          item.sourceName === data.sourceName || item.inputName === data.sourceName
+        );
+        
+        if (!sceneItem) {
+          throw new Error(`Source "${data.sourceName}" not found in scene "${data.sceneName}"`);
+        }
+        
+        // Invert current state
+        const newVisibility = !sceneItem.sceneItemEnabled;
+        
+        return window.obsManager.setSceneItemEnabled(
+          data.sceneName,
+          data.sourceName,
+          newVisibility
+        );
+      } catch (error) {
+        console.error('Error in toggle source visibility:', error);
+        throw error;
+      }
+    }
+    
+    // Handle explicit true/false
     return window.obsManager.setSceneItemEnabled(
       data.sceneName,
       data.sourceName,
@@ -464,6 +493,14 @@ class HotkeyManager {
     this.learningCallback = null;
     this.learningTargetHotkeyId = null;
 
+    // Clear any pending keyboard timeout
+    if (this.keyboardLearningTimeout) {
+      clearTimeout(this.keyboardLearningTimeout);
+      this.keyboardLearningTimeout = null;
+    }
+    
+    this.currentKeyEvent = null;
+
     // Remove trigger listeners
     this.removeLearningListeners();
 
@@ -511,19 +548,38 @@ class HotkeyManager {
     event.preventDefault();
     event.stopPropagation();
 
-    const trigger = {
-      type: 'keyboard',
-      data: {
-        key: event.key,
-        code: event.code,
-        ctrlKey: event.ctrlKey,
-        shiftKey: event.shiftKey,
-        altKey: event.altKey,
-        description: this.getKeyboardDescription(event)
-      }
+    // Clear any existing timeout
+    if (this.keyboardLearningTimeout) {
+      clearTimeout(this.keyboardLearningTimeout);
+    }
+
+    // Store the current key event
+    this.currentKeyEvent = {
+      key: event.key,
+      code: event.code,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      metaKey: event.metaKey
     };
 
-    this.handleLearningComplete(trigger);
+    // Wait 500ms for additional keys in combination
+    this.keyboardLearningTimeout = setTimeout(() => {
+      const trigger = {
+        type: 'keyboard',
+        data: {
+          key: this.currentKeyEvent.key,
+          code: this.currentKeyEvent.code,
+          ctrlKey: this.currentKeyEvent.ctrlKey,
+          shiftKey: this.currentKeyEvent.shiftKey,
+          altKey: this.currentKeyEvent.altKey,
+          metaKey: this.currentKeyEvent.metaKey,
+          description: this.getKeyboardDescription(this.currentKeyEvent)
+        }
+      };
+
+      this.handleLearningComplete(trigger);
+    }, 500);
   }
 
   handleLearningComplete(trigger) {
@@ -545,11 +601,38 @@ class HotkeyManager {
 
   getKeyboardDescription(event) {
     const modifiers = [];
+    if (event.metaKey) modifiers.push(navigator.platform.includes('Mac') ? 'Cmd' : 'Win');
     if (event.ctrlKey) modifiers.push('Ctrl');
-    if (event.shiftKey) modifiers.push('Shift');
     if (event.altKey) modifiers.push('Alt');
+    if (event.shiftKey) modifiers.push('Shift');
     
-    const keyName = event.key.length === 1 ? event.key.toUpperCase() : event.key;
+    let keyName = event.key || event.code || 'Unknown';
+    
+    // Safety check to prevent undefined errors
+    if (!keyName || typeof keyName !== 'string') {
+      keyName = 'Unknown';
+    }
+    
+    // Special key names for better readability
+    const specialKeys = {
+      ' ': 'Space',
+      'ArrowUp': '↑',
+      'ArrowDown': '↓', 
+      'ArrowLeft': '←',
+      'ArrowRight': '→',
+      'Enter': '⏎',
+      'Escape': 'Esc',
+      'Backspace': '⌫',
+      'Delete': 'Del',
+      'Tab': '⇥'
+    };
+    
+    if (specialKeys[keyName]) {
+      keyName = specialKeys[keyName];
+    } else if (keyName.length === 1) {
+      keyName = keyName.toUpperCase();
+    }
+    
     return modifiers.length > 0 ? `${modifiers.join('+')}+${keyName}` : keyName;
   }
 

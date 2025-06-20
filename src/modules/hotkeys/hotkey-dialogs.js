@@ -109,10 +109,10 @@ class HotkeyDialogManager {
     const addActionBtn = this.currentDialog.querySelector('#addActionBtn');
     const actionType = this.currentDialog.querySelector('#actionType');
     
-    addActionBtn?.addEventListener('click', () => {
+    addActionBtn?.addEventListener('click', async () => {
       const type = actionType.value;
       if (type) {
-        this.addActionToForm(type);
+        await this.addActionToForm(type);
         actionType.value = '';
       }
     });
@@ -234,7 +234,7 @@ class HotkeyDialogManager {
     }
   }
 
-  addActionToForm(actionType) {
+  async addActionToForm(actionType) {
     const actionsList = this.currentDialog.querySelector('#actionsList');
     if (!actionsList) return;
 
@@ -245,13 +245,13 @@ class HotkeyDialogManager {
     let configHTML = '';
     switch (actionType) {
       case 'obs_scene_switch':
-        configHTML = this.getSceneSwitchConfig();
+        configHTML = await this.getSceneSwitchConfig();
         break;
       case 'obs_source_visibility':
-        configHTML = this.getSourceVisibilityConfig();
+        configHTML = await this.getSourceVisibilityConfig();
         break;
       case 'obs_filter_toggle':
-        configHTML = this.getFilterToggleConfig();
+        configHTML = await this.getFilterToggleConfig();
         break;
       case 'obs_recording_toggle':
       case 'obs_streaming_toggle':
@@ -303,59 +303,116 @@ class HotkeyDialogManager {
     return titles[actionType] || actionType;
   }
 
-  getSceneSwitchConfig() {
-    // Get scenes properly from OBS manager
+  async getSceneSwitchConfig() {
     let scenes = [];
+    let refreshButtonHtml = '';
+    
     if (window.obsManager && window.obsManager.isConnected) {
-      const obsScenes = window.obsManager.availableScenes || window.obsManager.scenes || [];
-      // Handle different scene formats
-      scenes = Array.isArray(obsScenes) ? obsScenes : [];
+      try {
+        // Get fresh scenes from OBS
+        const obsScenes = await window.obsManager.getScenes();
+        scenes = Array.isArray(obsScenes) ? obsScenes : [];
+        refreshButtonHtml = '<button type="button" class="obs-refresh-btn" onclick="window.hotkeyDialogManager.refreshObsData(this, \'scenes\')">🔄 Aktualisieren</button>';
+      } catch (error) {
+        console.error('Error fetching scenes:', error);
+      }
     }
     
     return `
       <div class="config-group">
-        <label>Szene:</label>
-        <select name="sceneName" required>
-          <option value="">Szene auswählen...</option>
+        <label>Szene: ${refreshButtonHtml}</label>
+        <input list="sceneList" name="sceneName" placeholder="Szene eingeben oder auswählen" required autocomplete="off">
+        <datalist id="sceneList">
           ${scenes.map(scene => {
             const sceneName = scene.sceneName || scene.name || scene;
             return `<option value="${sceneName}">${sceneName}</option>`;
           }).join('')}
-        </select>
-        ${scenes.length === 0 ? '<small class="help-text">Keine Szenen gefunden. Ist OBS verbunden?</small>' : ''}
+        </datalist>
+        ${scenes.length === 0 ? '<small class="help-text">Keine Szenen gefunden. <button type="button" onclick="window.hotkeyDialogManager.refreshObsData(this, \'scenes\')">OBS-Daten laden</button></small>' : `<small class="help-text">${scenes.length} Szenen verfügbar</small>`}
       </div>
     `;
   }
 
-  getSourceVisibilityConfig() {
+  async getSourceVisibilityConfig() {
+    let scenes = [];
+    let sources = [];
+    let refreshButtonHtml = '';
+    
+    if (window.obsManager && window.obsManager.isConnected) {
+      try {
+        scenes = await window.obsManager.getScenes();
+        sources = await window.obsManager.getAllSources();
+        refreshButtonHtml = '<button type="button" class="obs-refresh-btn" onclick="window.hotkeyDialogManager.refreshObsData(this, \'sources\')">🔄</button>';
+      } catch (error) {
+        console.error('Error fetching sources:', error);
+      }
+    }
+    
     return `
       <div class="config-group">
-        <label>Scene Name:</label>
-        <input type="text" name="sceneName" placeholder="Scene Name" required>
+        <label>Szene: ${refreshButtonHtml}</label>
+        <input list="sceneListSource" name="sceneName" placeholder="Szene eingeben" required autocomplete="off" onchange="window.hotkeyDialogManager.loadSourcesForScene(this.value, this.parentElement.parentElement)">
+        <datalist id="sceneListSource">
+          ${scenes.map(scene => {
+            const sceneName = scene.sceneName || scene.name || scene;
+            return `<option value="${sceneName}">${sceneName}</option>`;
+          }).join('')}
+        </datalist>
       </div>
       <div class="config-group">
-        <label>Source Name:</label>
-        <input type="text" name="sourceName" placeholder="Source Name" required>
+        <label>Source:</label>
+        <input list="sourceList" name="sourceName" placeholder="Source eingeben" required autocomplete="off">
+        <datalist id="sourceList">
+          ${sources.map(source => {
+            const sourceName = source.inputName || source.sourceName || source.name || source;
+            return `<option value="${sourceName}">${sourceName}</option>`;
+          }).join('')}
+        </datalist>
+        <small class="help-text">Wähle zuerst eine Szene aus</small>
       </div>
       <div class="config-group">
         <label>Aktion:</label>
         <select name="visible" required>
-          <option value="true">Einblenden</option>
-          <option value="false">Ausblenden</option>
+          <option value="toggle">Automatisch umschalten (Toggle)</option>
+          <option value="true">Immer einblenden</option>
+          <option value="false">Immer ausblenden</option>
         </select>
+        <small class="help-text">Toggle prüft den aktuellen Status und schaltet entsprechend um</small>
       </div>
     `;
   }
 
-  getFilterToggleConfig() {
+  async getFilterToggleConfig() {
+    let sources = [];
+    let refreshButtonHtml = '';
+    
+    if (window.obsManager && window.obsManager.isConnected) {
+      try {
+        sources = await window.obsManager.getAllSources();
+        refreshButtonHtml = '<button type="button" class="obs-refresh-btn" onclick="window.hotkeyDialogManager.refreshObsData(this, \'sources\')">🔄</button>';
+      } catch (error) {
+        console.error('Error fetching sources:', error);
+      }
+    }
+    
     return `
       <div class="config-group">
-        <label>Source Name:</label>
-        <input type="text" name="sourceName" placeholder="Source Name" required>
+        <label>Source: ${refreshButtonHtml}</label>
+        <input list="sourceListFilter" name="sourceName" placeholder="Source eingeben" required autocomplete="off" onchange="window.hotkeyDialogManager.loadFiltersForSource(this.value, this.parentElement.parentElement)">
+        <datalist id="sourceListFilter">
+          ${sources.map(source => {
+            const sourceName = source.inputName || source.sourceName || source.name || source;
+            return `<option value="${sourceName}">${sourceName}</option>`;
+          }).join('')}
+        </datalist>
       </div>
       <div class="config-group">
-        <label>Filter Name:</label>
-        <input type="text" name="filterName" placeholder="Filter Name" required>
+        <label>Filter:</label>
+        <input list="filterList" name="filterName" placeholder="Filter eingeben" required autocomplete="off">
+        <datalist id="filterList">
+          <!-- Filters will be loaded dynamically -->
+        </datalist>
+        <small class="help-text">Wähle zuerst eine Source aus</small>
       </div>
       <div class="config-group">
         <label>Aktion:</label>
@@ -1312,6 +1369,117 @@ class HotkeyDialogManager {
     progress.style.display = 'none';
 
     this.deckLearningState = null;
+  }
+
+  // ===== OBS DATA REFRESH METHODS =====
+
+  async refreshObsData(buttonElement, dataType) {
+    if (!window.obsManager || !window.obsManager.isConnected) {
+      this.uiManager.showErrorMessage('OBS nicht verbunden', 'Bitte verbinde dich zuerst mit OBS Studio.');
+      return;
+    }
+
+    const originalText = buttonElement.textContent;
+    buttonElement.textContent = '⏳ Laden...';
+    buttonElement.disabled = true;
+
+    try {
+      if (dataType === 'scenes') {
+        const scenes = await window.obsManager.getScenes();
+        this.updateSceneDatalist(scenes);
+        this.uiManager.showSuccessMessage(`${scenes.length} Szenen geladen`);
+      } else if (dataType === 'sources') {
+        const sources = await window.obsManager.getAllSources();
+        this.updateSourceDatalist(sources);
+        this.uiManager.showSuccessMessage(`${sources.length} Sources geladen`);
+      }
+    } catch (error) {
+      console.error('Error refreshing OBS data:', error);
+      this.uiManager.showErrorMessage('Fehler beim Laden', 'OBS-Daten konnten nicht geladen werden.');
+    } finally {
+      buttonElement.textContent = originalText;
+      buttonElement.disabled = false;
+    }
+  }
+
+  updateSceneDatalist(scenes) {
+    const sceneDataLists = this.currentDialog.querySelectorAll('#sceneList, #sceneListSource');
+    const scenesHtml = scenes.map(scene => {
+      const sceneName = scene.sceneName || scene.name || scene;
+      return `<option value="${sceneName}">${sceneName}</option>`;
+    }).join('');
+
+    sceneDataLists.forEach(datalist => {
+      datalist.innerHTML = scenesHtml;
+    });
+  }
+
+  updateSourceDatalist(sources) {
+    const sourceDataLists = this.currentDialog.querySelectorAll('#sourceList, #sourceListFilter');
+    const sourcesHtml = sources.map(source => {
+      const sourceName = source.inputName || source.sourceName || source.name || source;
+      return `<option value="${sourceName}">${sourceName}</option>`;
+    }).join('');
+
+    sourceDataLists.forEach(datalist => {
+      datalist.innerHTML = sourcesHtml;
+    });
+  }
+
+  async loadSourcesForScene(sceneName, actionContainer) {
+    if (!sceneName || !window.obsManager || !window.obsManager.isConnected) {
+      return;
+    }
+
+    const sourceDatalist = actionContainer.querySelector('#sourceList');
+    const helpText = actionContainer.querySelector('.help-text');
+    
+    if (!sourceDatalist) return;
+
+    try {
+      helpText.textContent = '⏳ Sources werden geladen...';
+      const sceneItems = await window.obsManager.getSceneItems(sceneName);
+      
+      const sourcesHtml = sceneItems.map(item => {
+        const sourceName = item.sourceName || item.inputName || item.name || item;
+        return `<option value="${sourceName}">${sourceName}</option>`;
+      }).join('');
+      
+      sourceDatalist.innerHTML = sourcesHtml;
+      helpText.textContent = `${sceneItems.length} Sources in ${sceneName} gefunden`;
+    } catch (error) {
+      console.error('Error loading scene sources:', error);
+      sourceDatalist.innerHTML = '';
+      helpText.textContent = 'Fehler beim Laden der Scene-Sources';
+    }
+  }
+
+  async loadFiltersForSource(sourceName, actionContainer) {
+    if (!sourceName || !window.obsManager || !window.obsManager.isConnected) {
+      return;
+    }
+
+    const filterDatalist = actionContainer.querySelector('#filterList');
+    const helpText = actionContainer.querySelector('.help-text');
+    
+    if (!filterDatalist) return;
+
+    try {
+      helpText.textContent = '⏳ Filter werden geladen...';
+      const filters = await window.obsManager.getSourceFilters(sourceName);
+      
+      const filtersHtml = filters.map(filter => {
+        const filterName = filter.filterName || filter.name || filter;
+        return `<option value="${filterName}">${filterName}</option>`;
+      }).join('');
+      
+      filterDatalist.innerHTML = filtersHtml;
+      helpText.textContent = `${filters.length} Filter für ${sourceName} gefunden`;
+    } catch (error) {
+      console.error('Error loading filters:', error);
+      filterDatalist.innerHTML = '';
+      helpText.textContent = 'Fehler beim Laden der Filter';
+    }
   }
 
   // ===== UTILITY METHODS =====
