@@ -25,8 +25,6 @@
                 </div>
             </div>
             <div class="header-right">
-                <button class="header-btn" id="connectBtn" title="Verbindungen prüfen">🔗</button>
-                <button class="header-btn" id="debugBtn" title="Debug-Info">🐛</button>
                 <button class="header-btn" id="settingsBtn" title="Einstellungen">⚙️</button>
                 <button class="header-btn" id="minimizeBtn" title="Minimieren">−</button>
                 <button class="header-btn close" id="closeBtn" title="Schließen">×</button>
@@ -46,8 +44,8 @@
                     <!-- Audio sources will be dynamically loaded here -->
                     <div class="no-sources-message" id="noSourcesMessage">
                         <p>Keine Audio-Quellen gefunden</p>
-                        <p class="help-text">Verbinde dich mit OBS und stelle sicher, dass Audio-Quellen vorhanden sind</p>
-                        <p class="help-text">🔗 Klicke auf "Verbindungen prüfen" um OBS zu verbinden</p>
+                        <p class="help-text">Verbinde dich mit OBS über die Einstellungen</p>
+                        <p class="help-text">⚙️ Klicke auf "Einstellungen" um OBS zu konfigurieren</p>
                     </div>
                 </div>
             </section>
@@ -80,7 +78,7 @@
             </section>
         </main>
 
-        <!-- Settings Modal -->
+        <!-- Settings Modal with integrated connection status -->
         <div class="modal-overlay" id="settingsModal" style="display: none;">
             <div class="modal-content">
                 <div class="modal-header">
@@ -88,118 +86,58 @@
                     <button class="modal-close" id="closeSettings">×</button>
                 </div>
                 <div class="modal-body">
-                    <div class="settings-group">
-                        <label for="obsUrl">OBS WebSocket URL:</label>
-                        <input type="text" id="obsUrl" placeholder="ws://localhost:4455">
-                        <small class="help-text">Standard: ws://localhost:4455</small>
+                    <div class="settings-section">
+                        <h4>🎥 OBS Studio Verbindung</h4>
+                        <div class="connection-status-inline" id="obsStatusInline">
+                            <span class="status-dot"></span>
+                            <span class="status-text">Prüfe...</span>
+                        </div>
+                        <div class="settings-group">
+                            <label for="obsUrl">WebSocket URL:</label>
+                            <input type="text" id="obsUrl" placeholder="ws://localhost:4455">
+                            <small class="help-text">Standard: ws://localhost:4455</small>
+                        </div>
+                        <div class="settings-group">
+                            <label for="obsPassword">Passwort:</label>
+                            <input type="password" id="obsPassword" placeholder="Passwort (optional)">
+                            <small class="help-text">Leer lassen wenn kein Passwort gesetzt</small>
+                        </div>
+                        <div class="settings-group">
+                            <button class="btn-secondary" id="testObsConnection">🔗 Verbindung testen</button>
+                        </div>
                     </div>
-                    <div class="settings-group">
-                        <label for="obsPassword">OBS Passwort:</label>
-                        <input type="password" id="obsPassword" placeholder="Passwort (optional)">
-                        <small class="help-text">Leer lassen wenn kein Passwort gesetzt</small>
-                    </div>
-                    <div class="settings-group">
-                        <label for="midiDevice">MIDI Gerät:</label>
-                        <select id="midiDevice">
-                            <option value="">Automatisch erkennen</option>
-                        </select>
-                        <small class="help-text">Launch Control XL: Low Power Mode aktivieren für bessere Stabilität</small>
+                    
+                    <div class="settings-section">
+                        <h4>🎹 MIDI Controller</h4>
+                        <div class="connection-status-inline" id="midiStatusInline">
+                            <span class="status-dot"></span>
+                            <span class="status-text">Prüfe...</span>
+                        </div>
+                        <div class="settings-group">
+                            <label for="midiDevice">Gerät:</label>
+                            <select id="midiDevice">
+                                <option value="">Automatisch erkennen</option>
+                            </select>
+                            <small class="help-text">Mit linearem Volume-Mapping</small>
+                        </div>
+                        <div class="settings-group">
+                            <button class="btn-secondary" id="scanMidiDevices">🔍 MIDI scannen</button>
+                        </div>
+                        
+                        <!-- Launch Control XL Hilfe -->
+                        <div class="help-box">
+                            <strong>🎹 Launch Control XL Hilfe:</strong><br>
+                            <strong>Low Power Mode aktivieren:</strong><br>
+                            1. Halte "User" + "Factory Template"<br>
+                            2. USB einstecken, Buttons loslassen<br>
+                            3. "Record Arm" → Rechter Pfeil<br>
+                            <em>Verhindert Standby nach 2 Minuten</em>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn-secondary" id="resetSettings">Zurücksetzen</button>
                     <button class="btn-primary" id="saveSettings">Speichern</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Connection Modal -->
-        <div class="modal-overlay" id="connectionModal" style="display: none;">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Verbindungsstatus</h3>
-                    <button class="modal-close" id="closeConnection">×</button>
-                </div>
-                <div class="modal-body">
-                    <div class="connection-section">
-                        <h4>🎥 OBS Studio</h4>
-                        <div class="connection-info" id="obsConnectionInfo">
-                            <p>Status: <span id="obsConnectionStatus">Prüfe...</span></p>
-                            <p>URL: <span id="obsConnectionUrl">ws://localhost:4455</span></p>
-                            <p>Versuche: <span id="obsReconnectAttempts">0</span></p>
-                        </div>
-                        <div style="display: flex; gap: 8px;">
-                            <button class="btn-primary" id="connectObs">OBS Verbinden</button>
-                            <button class="btn-secondary" id="disconnectObs">Trennen</button>
-                        </div>
-                    </div>
-                    
-                    <div class="connection-section">
-                        <h4>🎹 MIDI Controller</h4>
-                        <div class="connection-info" id="midiConnectionInfo">
-                            <p>Status: <span id="midiConnectionStatus">Prüfe...</span></p>
-                            <p>Gerät: <span id="midiDeviceName">Kein Gerät</span></p>
-                            <p>Verfügbare Geräte: <span id="midiDeviceCount">0</span></p>
-                        </div>
-                        <div style="display: flex; gap: 8px;">
-                            <button class="btn-primary" id="scanMidi">MIDI Scannen</button>
-                            <button class="btn-secondary" id="disconnectMidi">Trennen</button>
-                        </div>
-                        
-                        <!-- Launch Control XL Help -->
-                        <div style="margin-top: 12px; padding: 12px; background: var(--tertiary-bg); border-radius: 6px; font-size: 12px;">
-                            <strong>🎛️ Launch Control XL Hilfe:</strong><br>
-                            <strong>Low Power Mode aktivieren:</strong><br>
-                            1. Halte "User" + "Factory Template" Buttons<br>
-                            2. USB-Kabel einstecken<br>
-                            3. Buttons loslassen<br>
-                            4. "Record Arm" drücken<br>
-                            5. Rechten Pfeil-Button drücken<br>
-                            <em>Verhindert automatisches Standby</em>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn-secondary" id="refreshConnection">Aktualisieren</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Debug Modal -->
-        <div class="modal-overlay" id="debugModal" style="display: none;">
-            <div class="modal-content large">
-                <div class="modal-header">
-                    <h3>Debug-Information</h3>
-                    <button class="modal-close" id="closeDebug">×</button>
-                </div>
-                <div class="modal-body">
-                    <div class="debug-section">
-                        <h4>📊 App Status</h4>
-                        <pre id="debugAppStatus">Lade...</pre>
-                    </div>
-                    <div class="debug-section">
-                        <h4>🎹 MIDI Events (Live)</h4>
-                        <div class="debug-log" id="midiEventLog">Keine Events...</div>
-                        <button class="btn-secondary" id="clearMidiLog">Log löschen</button>
-                    </div>
-                    <div class="debug-section">
-                        <h4>🎥 OBS Events (Live)</h4>
-                        <div class="debug-log" id="obsEventLog">Keine Events...</div>
-                        <button class="btn-secondary" id="clearObsLog">Log löschen</button>
-                    </div>
-                    <div class="debug-section">
-                        <h4>🔧 Fehlerbehebung</h4>
-                        <p style="font-size: 12px; color: var(--text-secondary);">
-                            <strong>Audio-Pegel zu niedrig:</strong> Volume-Conversion wurde korrigiert<br>
-                            <strong>MIDI-Gerät Standby:</strong> Low Power Mode aktivieren<br>
-                            <strong>Dialog schließt nicht:</strong> ESC-Taste oder erfolgreiche Zuordnung<br>
-                            <strong>Sortierung:</strong> An ⋮⋮ Symbol ziehen
-                        </p>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn-secondary" id="exportDebug">Debug exportieren</button>
-                    <button class="btn-primary" id="refreshDebug">Aktualisieren</button>
                 </div>
             </div>
         </div>
@@ -218,7 +156,7 @@
 
     <!-- Scripts - Load in correct order for proper initialization -->
     <script>
-        console.log('Starting module initialization...');
+        console.log('Starting OBS MIDI Mixer (Cleaned Version)...');
         
         // Global error handling
         window.addEventListener('error', (event) => {
@@ -281,17 +219,14 @@
         console.log('Drag & Drop Ready:', typeof Sortable !== 'undefined' && document.readyState === 'complete' ? '✅' : '⏳');
         
         // Quick start helper
-        console.log('\n🎛️ OBS MIDI Mixer loaded!');
+        console.log('\n🎛️ OBS MIDI Mixer loaded (Cleaned & Optimized)!');
         console.log('📋 Quick Commands:');
-        console.log('  debugApp() - Show app status');
-        console.log('  testConnections() - Test all connections'); 
-        console.log('  scanMIDI() - Scan MIDI devices');
-        console.log('  connectOBS() - Connect to OBS');
-        console.log('  window.uiManager.runConnectionTest() - Full connection test');
+        console.log('  window.uiManager.runConnectionTest() - Test connections'); 
+        console.log('  Settings → Test buttons for individual components');
         
         // Launch Control XL specific help
         console.log('\n🎹 Launch Control XL Users:');
-        console.log('  1. Aktiviere Low Power Mode (siehe Verbindungen → MIDI Hilfe)');
+        console.log('  1. Aktiviere Low Power Mode (siehe Einstellungen → MIDI Hilfe)');
         console.log('  2. Das verhindert automatisches Standby nach 2 Minuten');
         console.log('  3. Bei Problemen: USB neu einstecken');
         
@@ -322,7 +257,7 @@
             }
         }, 2000);
         
-        // Auto-start connection test after initialization
+        // Auto-start connection test after initialization (safer approach)
         setTimeout(() => {
             if (window.uiManager && window.uiManager.runConnectionTest) {
                 console.log('🚀 Running auto connection test...');

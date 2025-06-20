@@ -1,13 +1,15 @@
 {
   "name": "obs-midi-mixer",
   "version": "1.0.0",
-  "description": "MIDI-controlled audio mixer for OBS Studio streaming",
+  "description": "Bereinigter MIDI-controlled audio mixer für OBS Studio streaming",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
     "build": "electron-builder",
-    "clean": "rimraf dist"
+    "build-win": "electron-builder --win",
+    "clean": "rimraf dist",
+    "rebuild": "npm run clean && npm run build"
   },
   "keywords": ["obs", "midi", "audio", "streaming", "mixer"],
   "author": "Your Name",
@@ -22,27 +24,53 @@
     "webmidi": "^3.1.8"
   },
   "build": {
-    "appId": "com.yourname.obs-midi-mixer",
-    "productName": "OBS MIDI Mixer",
+    "appId": "com.miiiidi.obs-midi-mixer",
+    "productName": "OBS MIDI Mixer (Cleaned)",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "assets"
     },
     "files": [
       "main.js",
       "src/**/*",
+      "assets/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "src/config/",
+        "to": "config/",
+        "filter": ["**/*"]
+      }
+    ],
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
+      "target": {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "asInvoker",
+      "artifactName": "OBS-MIDI-Mixer-Setup-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "OBS MIDI Mixer"
     },
     "mac": {
       "target": "dmg",
-      "icon": "assets/icon.icns"
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.music"
     },
     "linux": {
       "target": "AppImage",
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.png",
+      "category": "AudioVideo"
     }
   }
 }

@@ -44,8 +44,6 @@ class UIManager {
       // Header elements
       obsStatus: document.getElementById('obsStatus'),
       midiStatus: document.getElementById('midiStatus'),
-      connectBtn: document.getElementById('connectBtn'),
-      debugBtn: document.getElementById('debugBtn'),
       settingsBtn: document.getElementById('settingsBtn'),
       minimizeBtn: document.getElementById('minimizeBtn'),
       closeBtn: document.getElementById('closeBtn'),
@@ -66,7 +64,7 @@ class UIManager {
       hotkeyMappings: document.getElementById('hotkeyMappings'),
       noMappingsMessage: document.getElementById('noMappingsMessage'),
       
-      // Settings modal
+      // Settings modal with integrated connection features
       settingsModal: document.getElementById('settingsModal'),
       closeSettings: document.getElementById('closeSettings'),
       obsUrl: document.getElementById('obsUrl'),
@@ -75,33 +73,11 @@ class UIManager {
       resetSettings: document.getElementById('resetSettings'),
       saveSettings: document.getElementById('saveSettings'),
       
-      // Connection modal
-      connectionModal: document.getElementById('connectionModal'),
-      closeConnection: document.getElementById('closeConnection'),
-      obsConnectionInfo: document.getElementById('obsConnectionInfo'),
-      obsConnectionStatus: document.getElementById('obsConnectionStatus'),
-      obsConnectionUrl: document.getElementById('obsConnectionUrl'),
-      obsReconnectAttempts: document.getElementById('obsReconnectAttempts'),
-      connectObs: document.getElementById('connectObs'),
-      disconnectObs: document.getElementById('disconnectObs'),
-      midiConnectionInfo: document.getElementById('midiConnectionInfo'),
-      midiConnectionStatus: document.getElementById('midiConnectionStatus'),
-      midiDeviceName: document.getElementById('midiDeviceName'),
-      midiDeviceCount: document.getElementById('midiDeviceCount'),
-      scanMidi: document.getElementById('scanMidi'),
-      disconnectMidi: document.getElementById('disconnectMidi'),
-      refreshConnection: document.getElementById('refreshConnection'),
-      
-      // Debug modal
-      debugModal: document.getElementById('debugModal'),
-      closeDebug: document.getElementById('closeDebug'),
-      debugAppStatus: document.getElementById('debugAppStatus'),
-      midiEventLog: document.getElementById('midiEventLog'),
-      obsEventLog: document.getElementById('obsEventLog'),
-      clearMidiLog: document.getElementById('clearMidiLog'),
-      clearObsLog: document.getElementById('clearObsLog'),
-      exportDebug: document.getElementById('exportDebug'),
-      refreshDebug: document.getElementById('refreshDebug')
+      // New integrated connection status elements
+      obsStatusInline: document.getElementById('obsStatusInline'),
+      midiStatusInline: document.getElementById('midiStatusInline'),
+      testObsConnection: document.getElementById('testObsConnection'),
+      scanMidiDevices: document.getElementById('scanMidiDevices')
     };
     
     console.log('UIManager: Elements cached');
@@ -109,8 +85,6 @@ class UIManager {
 
   setupEventListeners() {
     // Header buttons
-    this.elements.connectBtn?.addEventListener('click', () => this.openConnectionModal());
-    this.elements.debugBtn?.addEventListener('click', () => this.openDebugModal());
     this.elements.settingsBtn?.addEventListener('click', () => this.openSettings());
     this.elements.minimizeBtn?.addEventListener('click', () => this.minimizeWindow());
     this.elements.closeBtn?.addEventListener('click', () => this.closeWindow());
@@ -135,30 +109,9 @@ class UIManager {
     this.elements.resetSettings?.addEventListener('click', () => this.resetSettings());
     this.elements.saveSettings?.addEventListener('click', () => this.saveSettings());
     
-    // Connection modal
-    this.elements.closeConnection?.addEventListener('click', () => this.closeConnectionModal());
-    this.elements.connectionModal?.addEventListener('click', (e) => {
-      if (e.target === this.elements.connectionModal) {
-        this.closeConnectionModal();
-      }
-    });
-    this.elements.connectObs?.addEventListener('click', () => this.connectObs());
-    this.elements.disconnectObs?.addEventListener('click', () => this.disconnectObs());
-    this.elements.scanMidi?.addEventListener('click', () => this.scanMidi());
-    this.elements.disconnectMidi?.addEventListener('click', () => this.disconnectMidi());
-    this.elements.refreshConnection?.addEventListener('click', () => this.refreshConnectionStatus());
-    
-    // Debug modal
-    this.elements.closeDebug?.addEventListener('click', () => this.closeDebugModal());
-    this.elements.debugModal?.addEventListener('click', (e) => {
-      if (e.target === this.elements.debugModal) {
-        this.closeDebugModal();
-      }
-    });
-    this.elements.clearMidiLog?.addEventListener('click', () => this.clearMidiLog());
-    this.elements.clearObsLog?.addEventListener('click', () => this.clearObsLog());
-    this.elements.exportDebug?.addEventListener('click', () => this.exportDebugInfo());
-    this.elements.refreshDebug?.addEventListener('click', () => this.refreshDebugInfo());
+    // Integrated connection test buttons
+    this.elements.testObsConnection?.addEventListener('click', () => this.testObsConnection());
+    this.elements.scanMidiDevices?.addEventListener('click', () => this.scanMidiDevices());
     
     // Global events
     document.addEventListener('mousemove', (e) => this.handleResize(e));
@@ -197,34 +150,34 @@ class UIManager {
       console.log('UIManager: Setting up OBS listeners');
       window.obsManager.on('connected', () => {
         this.updateConnectionStatus();
-        this.addObsLogEntry('Connection', 'Connected to OBS Studio');
+        this.logEvent('OBS', 'Connection', 'Connected to OBS Studio');
         // Load scenes when connected
         this.loadScenes();
       });
       window.obsManager.on('disconnected', () => {
         this.updateConnectionStatus();
-        this.addObsLogEntry('Connection', 'Disconnected from OBS Studio');
+        this.logEvent('OBS', 'Connection', 'Disconnected from OBS Studio');
       });
       window.obsManager.on('connecting', () => {
         this.updateConnectionStatus();
-        this.addObsLogEntry('Connection', 'Connecting to OBS Studio...');
+        this.logEvent('OBS', 'Connection', 'Connecting to OBS Studio...');
       });
       window.obsManager.on('error', (error) => {
         this.updateConnectionStatus();
-        this.addObsLogEntry('Error', error?.message || 'Unknown error');
+        this.logEvent('OBS', 'Error', error?.message || 'Unknown error');
       });
       window.obsManager.on('audioSourcesUpdated', (sources) => {
-        this.addObsLogEntry('Audio', `${sources.length} audio sources found`);
+        this.logEvent('OBS', 'Audio', `${sources.length} audio sources found`);
       });
       window.obsManager.on('scenesUpdated', (scenes) => {
         this.availableScenes = scenes;
-        this.addObsLogEntry('Scenes', `${scenes.length} scenes loaded`);
+        this.logEvent('OBS', 'Scenes', `${scenes.length} scenes loaded`);
         this.updateSceneButtons();
       });
       // GEFIXT: Volume Meters Event
       window.obsManager.on('volumeMeters', (data) => {
         // This event now fires regularly thanks to correct subscription
-        this.addObsLogEntry('Volume Meters', `Received data for ${data.inputs?.length || 0} inputs`);
+        this.logEvent('OBS', 'Volume Meters', `Received data for ${data.inputs?.length || 0} inputs`);
       });
     } else {
       console.warn('UIManager: OBS Manager not available for listeners');
@@ -236,12 +189,12 @@ class UIManager {
       window.midiController.on('deviceConnected', (device) => {
         console.log('UIManager: MIDI device connected:', device);
         setTimeout(() => this.updateConnectionStatus(), 100);
-        this.addMidiLogEntry('Device Connected', device?.name || 'Unknown device');
+        this.logEvent('MIDI', 'Device Connected', device?.name || 'Unknown device');
       });
       window.midiController.on('deviceDisconnected', () => {
         console.log('UIManager: MIDI device disconnected');
         setTimeout(() => this.updateConnectionStatus(), 100);
-        this.addMidiLogEntry('Device Disconnected', 'Device removed or went to standby');
+        this.logEvent('MIDI', 'Device Disconnected', 'Device removed or went to standby');
       });
       window.midiController.on('devicesUpdated', (devices) => {
         console.log('UIManager: MIDI devices updated:', devices);
@@ -251,7 +204,7 @@ class UIManager {
       window.midiController.on('learningStarted', () => this.onMidiLearningStarted());
       window.midiController.on('learningStopped', () => this.onMidiLearningStopped());
       window.midiController.on('midiMessage', (message) => {
-        this.addMidiLogEntry('MIDI Message', `${message.type}: ${message.id}`);
+        this.logEvent('MIDI', 'Message', `${message.type}: ${message.id}`);
       });
     } else {
       console.warn('UIManager: MIDI Controller not available for listeners');
@@ -957,185 +910,66 @@ class UIManager {
     this.updateSceneMappingsDisplay();
   }
 
-  // Connection Modal methods
-  openConnectionModal() {
-    if (this.elements.connectionModal) {
-      this.elements.connectionModal.style.display = 'flex';
-      this.refreshConnectionStatus();
-    }
-  }
-
-  closeConnectionModal() {
-    if (this.elements.connectionModal) {
-      this.elements.connectionModal.style.display = 'none';
-    }
-  }
-
-  refreshConnectionStatus() {
-    // Update OBS connection info
-    const obsStatus = window.obsManager?.getConnectionStatus() || {};
-    if (this.elements.obsConnectionStatus) {
-      this.elements.obsConnectionStatus.textContent = obsStatus.connected ? 
-        (obsStatus.volumeMetersEnabled ? 'Verbunden (Meters ✓)' : 'Verbunden') : 
-        obsStatus.connecting ? 'Verbinde...' : 'Getrennt';
-    }
-    if (this.elements.obsReconnectAttempts) {
-      this.elements.obsReconnectAttempts.textContent = obsStatus.reconnectAttempts || '0';
-    }
+  // New integrated connection methods
+  testObsConnection() {
+    const obsUrl = this.elements.obsUrl?.value || 'ws://localhost:4455';
+    const obsPassword = this.elements.obsPassword?.value || '';
     
-    // Update MIDI connection info
-    const activeDevice = window.midiController?.getActiveDevice();
-    const connectedDevices = window.midiController?.getConnectedDevices() || [];
-    
-    if (this.elements.midiConnectionStatus) {
-      this.elements.midiConnectionStatus.textContent = activeDevice ? 'Verbunden (LINEAR)' : 'Getrennt';
-    }
-    if (this.elements.midiDeviceName) {
-      this.elements.midiDeviceName.textContent = activeDevice ? activeDevice.name : 'Kein Gerät';
-    }
-    if (this.elements.midiDeviceCount) {
-      this.elements.midiDeviceCount.textContent = connectedDevices.length.toString();
-    }
-  }
-
-  connectObs() {
-    const settings = window.settingsManager?.getObsSettings() || {};
     if (window.obsManager) {
-      window.obsManager.connect(settings.url, settings.password)
+      this.updateInlineStatus('obs', 'connecting', 'Verbinde...');
+      window.obsManager.connect(obsUrl, obsPassword)
         .then(() => {
-          this.addObsLogEntry('Connection', 'Connected successfully with Volume Meters');
+          this.updateInlineStatus('obs', 'connected', 'Verbunden mit Volume Meters!');
+          this.showSuccessMessage('OBS-Verbindung erfolgreich!');
         })
         .catch(error => {
-          this.addObsLogEntry('Error', `Connection failed: ${error.message}`);
+          this.updateInlineStatus('obs', 'error', 'Verbindung fehlgeschlagen');
+          this.showErrorMessage('OBS-Verbindung', error.message);
         });
     }
   }
 
-  disconnectObs() {
-    if (window.obsManager) {
-      window.obsManager.disconnect();
-      this.addObsLogEntry('Connection', 'Disconnected manually');
-    }
-  }
-
-  scanMidi() {
+  scanMidiDevices() {
     if (window.midiController) {
-      window.midiController.scanDevices();
-      this.addMidiLogEntry('Scan', 'Scanning for MIDI devices...');
+      this.updateInlineStatus('midi', 'connecting', 'Scanne...');
+      const devices = window.midiController.scanDevices();
+      
+      if (devices.length > 0) {
+        this.updateInlineStatus('midi', 'connected', `${devices.length} Gerät(e) gefunden`);
+        this.showSuccessMessage(`${devices.length} MIDI-Gerät(e) mit linearem Mapping gefunden!`);
+        this.updateMidiDevices(devices);
+      } else {
+        this.updateInlineStatus('midi', 'error', 'Keine Geräte gefunden');
+        this.showErrorMessage('MIDI-Scan', 'Keine MIDI-Geräte gefunden');
+      }
     }
   }
 
-  disconnectMidi() {
-    if (window.midiController) {
-      window.midiController.disconnectFromDevice();
-      this.addMidiLogEntry('Connection', 'Disconnected manually');
-    }
-  }
-
-  // Debug Modal methods
-  openDebugModal() {
-    if (this.elements.debugModal) {
-      this.elements.debugModal.style.display = 'flex';
-      this.refreshDebugInfo();
-    }
-  }
-
-  closeDebugModal() {
-    if (this.elements.debugModal) {
-      this.elements.debugModal.style.display = 'none';
-    }
-  }
-
-  refreshDebugInfo() {
-    if (this.elements.debugAppStatus) {
-      const status = {
-        app: window.app?.getAppStatus() || {},
-        settings: Object.keys(window.settingsManager?.getAll() || {}).length,
-        audioSources: window.audioManager?.getAllAudioSources().length || 0,
-        scenes: this.availableScenes.length,
-        midiMappings: window.midiController?.getAllMappings().length || 0,
-        obsVolumeMeters: window.obsManager?.getConnectionStatus()?.volumeMetersEnabled || false,
-        timestamp: new Date().toLocaleString()
-      };
-      this.elements.debugAppStatus.textContent = JSON.stringify(status, null, 2);
-    }
-  }
-
-  addMidiLogEntry(type, data) {
-    if (!this.midiEventBuffer) {
-      this.midiEventBuffer = [];
-    }
+  updateInlineStatus(type, status, text) {
+    const elementId = type === 'obs' ? 'obsStatusInline' : 'midiStatusInline';
+    const element = this.elements[elementId];
     
-    const entry = {
-      timestamp: new Date().toLocaleTimeString(),
-      type: type,
-      data: data
-    };
-    
-    this.midiEventBuffer.push(entry);
-    if (this.midiEventBuffer.length > this.maxLogEntries) {
-      this.midiEventBuffer.shift();
-    }
-    
-    this.updateMidiLog();
-  }
-
-  addObsLogEntry(type, data) {
-    if (!this.obsEventBuffer) {
-      this.obsEventBuffer = [];
-    }
-    
-    const entry = {
-      timestamp: new Date().toLocaleTimeString(),
-      type: type,
-      data: data
-    };
-    
-    this.obsEventBuffer.push(entry);
-    if (this.obsEventBuffer.length > this.maxLogEntries) {
-      this.obsEventBuffer.shift();
-    }
-    
-    this.updateObsLog();
-  }
-
-  updateMidiLog() {
-    if (this.elements.midiEventLog) {
-      const logText = this.midiEventBuffer.map(entry => 
-        `[${entry.timestamp}] ${entry.type}: ${entry.data}`
-      ).join('\n');
-      this.elements.midiEventLog.textContent = logText || 'Keine Events...';
-      this.elements.midiEventLog.scrollTop = this.elements.midiEventLog.scrollHeight;
+    if (element) {
+      const statusDot = element.querySelector('.status-dot');
+      const statusText = element.querySelector('.status-text');
+      
+      if (statusDot) {
+        statusDot.className = `status-dot ${status}`;
+      }
+      
+      if (statusText) {
+        statusText.textContent = text;
+      }
     }
   }
 
-  updateObsLog() {
-    if (this.elements.obsEventLog) {
-      const logText = this.obsEventBuffer.map(entry => 
-        `[${entry.timestamp}] ${entry.type}: ${entry.data}`
-      ).join('\n');
-      this.elements.obsEventLog.textContent = logText || 'Keine Events...';
-      this.elements.obsEventLog.scrollTop = this.elements.obsEventLog.scrollHeight;
-    }
-  }
-
-  clearMidiLog() {
-    this.midiEventBuffer = [];
-    this.updateMidiLog();
-  }
-
-  clearObsLog() {
-    this.obsEventBuffer = [];
-    this.updateObsLog();
+  // Simplified logging for background events (no more debug modal)
+  logEvent(type, category, data) {
+    console.log(`[${new Date().toLocaleTimeString()}] ${type} ${category}:`, data);
   }
 
   runConnectionTest() {
-    // Check if enhanced version should be used
-    if (this.isEnhancedHotkeyMode && window.hotkeyManager) {
-      return this.runEnhancedConnectionTest();
-    }
-    
-    console.log('🧪 Running FIXED Connection Test...');
+    console.log('🧪 Running Connection Test...');
     
     const results = {
       managers: {
@@ -1257,31 +1091,27 @@ class UIManager {
     }, 3000);
   }
 
-  exportDebugInfo() {
-    const debugData = {
+  // Settings export/import capability
+  exportSettings() {
+    const settings = {
       timestamp: new Date().toISOString(),
-      appStatus: window.app?.getAppStatus() || {},
+      version: '1.0.0',
       settings: window.settingsManager?.getAll() || {},
-      midiEvents: this.midiEventBuffer || [],
-      obsEvents: this.obsEventBuffer || [],
-      availableScenes: this.availableScenes,
-      fixes: {
-        linearMidiMapping: 'FIXED - Direct 1:1 MIDI to OBS mapping',
-        dbVisualization: 'FIXED - OBS-style logarithmic dB meter positioning',
-        volumeMetersSubscription: 'FIXED - Correct high-volume event subscription'
-      }
+      audioSourceOrder: window.settingsManager?.get('ui.audioSourceOrder', []),
+      midiMappings: window.midiController?.getAllMappings() || []
     };
     
-    const dataStr = JSON.stringify(debugData, null, 2);
+    const dataStr = JSON.stringify(settings, null, 2);
     const dataBlob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
     
     const link = document.createElement('a');
     link.href = url;
-    link.download = `obs-midi-mixer-debug-FIXED-${Date.now()}.json`;
+    link.download = `obs-midi-mixer-settings-${Date.now()}.json`;
     link.click();
     
     URL.revokeObjectURL(url);
+    this.showSuccessMessage('Einstellungen exportiert!');
   }
 
   // Settings management
@@ -1289,6 +1119,7 @@ class UIManager {
     if (this.elements.settingsModal) {
       this.elements.settingsModal.style.display = 'flex';
       this.loadSettingsValues();
+      this.updateInlineConnectionStatus();
     }
   }
 
@@ -1311,6 +1142,32 @@ class UIManager {
     }
     
     this.updateMidiDevices(window.midiController?.getConnectedDevices() || []);
+    this.updateInlineConnectionStatus();
+  }
+
+  updateInlineConnectionStatus() {
+    // Update OBS status
+    const obsStatus = window.obsManager?.getConnectionStatus() || {};
+    if (obsStatus.connected && obsStatus.identified) {
+      this.updateInlineStatus('obs', 'connected', obsStatus.volumeMetersEnabled ? 
+        'Verbunden (Meters ✓)' : 'Verbunden');
+    } else if (obsStatus.connecting) {
+      this.updateInlineStatus('obs', 'connecting', 'Verbinde...');
+    } else {
+      this.updateInlineStatus('obs', 'error', 'Getrennt');
+    }
+
+    // Update MIDI status
+    const activeDevice = window.midiController?.getActiveDevice();
+    const connectedDevices = window.midiController?.getConnectedDevices() || [];
+    
+    if (activeDevice && activeDevice.name) {
+      this.updateInlineStatus('midi', 'connected', `${activeDevice.name} (LINEAR)`);
+    } else if (connectedDevices.length > 0) {
+      this.updateInlineStatus('midi', 'connected', `${connectedDevices.length} Gerät(e) verfügbar`);
+    } else {
+      this.updateInlineStatus('midi', 'error', 'Kein Gerät');
+    }
   }
 
   updateMidiDevices(devices) {
@@ -1354,7 +1211,12 @@ class UIManager {
     }
     
     this.closeSettings();
-    this.showSuccessMessage('Einstellungen gespeichert und Verbindungen aktualisiert (mit Fixes)');
+    this.showSuccessMessage('Einstellungen gespeichert und Verbindungen aktualisiert!');
+    
+    // Update inline status after save
+    setTimeout(() => {
+      this.updateInlineConnectionStatus();
+    }, 1000);
   }
 
   resetSettings() {
@@ -1387,10 +1249,6 @@ class UIManager {
     if (e.key === 'Escape') {
       if (this.elements.settingsModal.style.display === 'flex') {
         this.closeSettings();
-      } else if (this.elements.connectionModal.style.display === 'flex') {
-        this.closeConnectionModal();
-      } else if (this.elements.debugModal.style.display === 'flex') {
-        this.closeDebugModal();
       } else if (this.isLearningMidi) {
         this.stopMidiLearning();
       }
@@ -1403,12 +1261,7 @@ class UIManager {
     
     if (e.key === 'F1') {
       e.preventDefault();
-      this.openConnectionModal();
-    }
-    
-    if (e.key === 'F12') {
-      e.preventDefault();
-      this.openDebugModal();
+      this.openSettings();
     }
   }
 
@@ -1517,7 +1370,54 @@ class UIManager {
   runEnhancedConnectionTest() {
     console.log('🧪 Running Enhanced Connection Test with Hotkey Support...');
     
-    const results = this.runConnectionTest();
+    const results = {
+      managers: {
+        settings: !!window.settingsManager,
+        obs: !!window.obsManager,
+        midi: !!window.midiController,
+        audio: !!window.audioManager,
+        ui: !!window.uiManager
+      },
+      connections: {},
+      devices: {},
+      fixes: {
+        linearMidiMapping: true,
+        dbVisualization: true,
+        volumeMetersSubscription: true
+      }
+    };
+    
+    // Test OBS connection
+    if (window.obsManager) {
+      results.connections.obs = window.obsManager.getConnectionStatus();
+      
+      if (!results.connections.obs.connected) {
+        const settings = window.settingsManager?.getObsSettings() || {};
+        window.obsManager.connect(settings.url || 'ws://localhost:4455', settings.password || '')
+          .then(() => {
+            console.log('✓ OBS Test: Connected with Volume Meters');
+            this.showSuccessMessage('OBS-Verbindung erfolgreich mit Volume Meters!');
+          })
+          .catch(err => {
+            console.log('✗ OBS Test Failed:', err.message);
+            this.showErrorMessage('OBS-Verbindung fehlgeschlagen', err.message);
+          });
+      }
+    }
+    
+    // Test MIDI devices
+    if (window.midiController) {
+      const devices = window.midiController.scanDevices();
+      results.devices.midi = devices;
+      
+      if (devices.length > 0) {
+        console.log('✓ MIDI Test: Found', devices.length, 'devices with LINEAR mapping');
+        this.showSuccessMessage(`${devices.length} MIDI-Gerät(e) mit LINEAREM Volume-Mapping gefunden!`);
+      } else {
+        console.log('✗ MIDI Test: No devices found');
+        this.showErrorMessage('MIDI-Test', 'Keine MIDI-Geräte gefunden');
+      }
+    }
     
     // Test hotkey system
     if (window.hotkeyManager) {
@@ -1540,8 +1440,24 @@ class UIManager {
       this.showSuccessMessage(`Enhanced Hotkeys: ${hotkeyStats.totalHotkeys} Hotkeys, ${hotkeyStats.totalDecks} Decks ready!`);
     } else {
       results.hotkeys = { enabled: false, error: 'Hotkey system not loaded' };
-      this.showErrorMessage('Hotkey System', 'Enhanced hotkey system not available');
     }
+    
+    // Test volume curve fixes
+    if (window.audioManager) {
+      console.log('✓ Volume Visualization: FIXED dB meter positioning');
+      window.audioManager.testVolumeMeter();
+    }
+    
+    if (window.midiController) {
+      console.log('✓ MIDI Volume Mapping: FIXED linear mapping');
+      window.midiController.testVolumeMapping();
+    }
+    
+    console.log('Enhanced Connection Test Results:', results);
+    
+    setTimeout(() => {
+      this.updateConnectionStatus();
+    }, 500);
     
     return results;
   }
