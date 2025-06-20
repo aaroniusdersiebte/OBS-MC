@@ -2072,6 +2072,166 @@ datalist option:hover {
   }
 }
 
+/* ===== CURRENT DECK VIEW (NEW) ===== */
+.current-deck-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.deck-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.breadcrumb-btn {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: var(--transition);
+  font-size: 12px;
+}
+
+.breadcrumb-btn:hover {
+  background: var(--accent-orange);
+  color: white;
+  border-color: var(--accent-orange);
+}
+
+.breadcrumb-separator {
+  color: var(--text-muted);
+  font-weight: bold;
+}
+
+.breadcrumb-current {
+  color: var(--accent-orange);
+  font-weight: 600;
+}
+
+.current-deck-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  background: var(--secondary-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.deck-title-section {
+  flex: 1;
+}
+
+.current-deck-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.deck-type-badge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.deck-type-badge.main-deck {
+  background: var(--accent-blue);
+  color: white;
+}
+
+.deck-type-badge.sub-deck {
+  background: var(--accent-green);
+  color: white;
+}
+
+.current-deck-grid {
+  display: grid;
+  gap: 8px;
+  background: var(--tertiary-bg);
+  padding: 16px;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+  margin-bottom: 16px;
+}
+
+.sub-decks-section {
+  margin-top: 20px;
+}
+
+/* ===== DECK OVERVIEW CARDS (ENHANCED) ===== */
+.deck-overview-header {
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.deck-overview-header h3 {
+  font-size: 18px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.deck-overview-header p {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.sub-decks-preview {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.sub-decks-preview h5 {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.sub-deck-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sub-deck-chip {
+  background: var(--tertiary-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.sub-deck-chip:hover {
+  background: var(--accent-orange);
+  color: white;
+  border-color: var(--accent-orange);
+}
+
+/* ===== ENHANCED STATS ===== */
+.current-deck-indicator {
+  background: rgba(210, 105, 30, 0.2);
+  color: var(--accent-orange);
+  border: 1px solid rgba(210, 105, 30, 0.3);
+  font-weight: 600;
+}
+
 /* ===== RESPONSIVE DESIGN ===== */
 @media (max-width: 1200px) {
   .enhanced-hotkey-container {

@@ -63,6 +63,7 @@ class HotkeyUIManager {
           <button class="action-btn" id="createDeckBtn" title="Neues Deck erstellen">🎛️➕</button>
           <button class="action-btn" id="learnHotkeyBtn" title="Hotkey lernen">🎓</button>
           <button class="action-btn" id="importExportBtn" title="Import/Export">💾</button>
+          <button class="action-btn" id="backToMainBtn" title="Zurück zu Main Decks" style="display: none;">🏠</button>
         </div>
       </div>
     `;
@@ -103,11 +104,13 @@ class HotkeyUIManager {
     const createDeckBtn = document.getElementById('createDeckBtn');
     const learnHotkeyBtn = document.getElementById('learnHotkeyBtn');
     const importExportBtn = document.getElementById('importExportBtn');
+    const backToMainBtn = document.getElementById('backToMainBtn');
 
     createHotkeyBtn?.addEventListener('click', () => this.showCreateHotkeyDialog());
     createDeckBtn?.addEventListener('click', () => this.showCreateDeckDialog());
     learnHotkeyBtn?.addEventListener('click', () => this.startQuickLearning());
     importExportBtn?.addEventListener('click', () => this.showImportExportDialog());
+    backToMainBtn?.addEventListener('click', () => this.backToMainDecks());
   }
 
   createMainContainer() {
@@ -140,9 +143,10 @@ class HotkeyUIManager {
     this.hotkeyManager.on('deckCreated', () => this.updateDisplay());
     this.hotkeyManager.on('deckUpdated', () => this.updateDisplay());
     this.hotkeyManager.on('deckDeleted', () => this.updateDisplay());
-    this.hotkeyManager.on('deckSwitched', (deck) => this.onDeckSwitched(deck));
+    this.hotkeyManager.on('deckSwitched', (data) => this.onDeckSwitched(data));
     this.hotkeyManager.on('hotkeyExecuted', (data) => this.onHotkeyExecuted(data));
     this.hotkeyManager.on('hapticFeedback', () => this.triggerHapticFeedback());
+    this.hotkeyManager.on('initialized', () => this.updateDisplay());
   }
 
   setHotkeyCardSize(size) {
@@ -196,6 +200,7 @@ class HotkeyUIManager {
   
   performUpdate() {
     this.updateStats();
+    this.updateBackButton();
     
     // Load saved card size on first display
     if (this.elements.content && !this.elements.content.classList.contains('hotkey-size-small') && 
@@ -215,74 +220,140 @@ class HotkeyUIManager {
     const stats = this.hotkeyManager.getStats();
     const statsElement = document.getElementById('hotkeyStats');
     if (statsElement) {
+      const currentDeckName = this.hotkeyManager.isMainDecksView() ? 'Main Decks' : (this.hotkeyManager.getCurrentDeck()?.name || 'Unknown');
       statsElement.innerHTML = `
         <span class="stat-item">${stats.totalHotkeys} Hotkeys</span>
         <span class="stat-item">${stats.totalDecks} Decks</span>
+        <span class="stat-item current-deck-indicator">${currentDeckName}</span>
       `;
     }
   }
 
-  // ===== HOTKEYS VIEW =====
+  updateBackButton() {
+    const backBtn = document.getElementById('backToMainBtn');
+    if (backBtn) {
+      const isMainView = this.hotkeyManager.isMainDecksView();
+      backBtn.style.display = isMainView ? 'none' : 'flex';
+    }
+  }
+
+  backToMainDecks() {
+    this.hotkeyManager.switchToMainDecks();
+  }
+
+  // ===== HOTKEYS VIEW (ENHANCED) =====
 
   renderHotkeysView() {
     if (!this.elements.content) return;
 
-    const standaloneHotkeys = this.hotkeyManager.getStandaloneHotkeys();
-    const decks = this.hotkeyManager.getMainDecks();
+    const isMainView = this.hotkeyManager.isMainDecksView();
+    const currentDeck = this.hotkeyManager.getCurrentDeck();
 
     let html = '';
 
-    // Standalone hotkeys section
-    if (standaloneHotkeys.length > 0) {
-      html += `
-        <div class="hotkey-section standalone-hotkeys">
-          <h3 class="section-title">Einzelne Hotkeys</h3>
-          <div class="hotkey-grid adaptive-grid" id="standaloneGrid">
-            ${standaloneHotkeys.map(hotkey => this.renderHotkeyCard(hotkey)).join('')}
-          </div>
-        </div>
-      `;
-    }
+    if (isMainView) {
+      // Main Decks Ansicht
+      const standaloneHotkeys = this.hotkeyManager.getStandaloneHotkeys();
+      const mainDecks = this.hotkeyManager.getMainDecks();
 
-    // Decks with their hotkeys
-    decks.forEach(deck => {
-      const deckHotkeys = this.hotkeyManager.getHotkeysByDeck(deck.id);
-      html += `
-        <div class="hotkey-section deck-section" data-deck-id="${deck.id}">
-          <div class="deck-header">
-            <h3 class="section-title">
-              <span class="deck-icon">🎛️</span>
-              ${deck.name}
-              <span class="deck-info">(${deck.rows}×${deck.columns})</span>
-            </h3>
-            <div class="deck-actions">
-              <button class="deck-action-btn" onclick="window.hotkeyUIManager.createSubDeck('${deck.id}')" title="Unterdeck erstellen">📁➕</button>
-              <button class="deck-action-btn" onclick="window.hotkeyUIManager.switchToDeck('${deck.id}')" title="Zu diesem Deck wechseln">🎯</button>
-              <button class="deck-action-btn" onclick="window.hotkeyUIManager.editDeck('${deck.id}')" title="Deck bearbeiten">✏️</button>
-              <button class="deck-action-btn" onclick="window.hotkeyUIManager.learnDeckHotkeys('${deck.id}')" title="Deck-Hotkeys lernen">🎓</button>
+      // Standalone hotkeys section
+      if (standaloneHotkeys.length > 0) {
+        html += `
+          <div class="hotkey-section standalone-hotkeys">
+            <h3 class="section-title">Einzelne Hotkeys</h3>
+            <div class="hotkey-grid adaptive-grid" id="standaloneGrid">
+              ${standaloneHotkeys.map(hotkey => this.renderHotkeyCard(hotkey)).join('')}
             </div>
           </div>
-          <div class="deck-grid" style="grid-template-columns: repeat(${deck.columns}, 1fr); grid-template-rows: repeat(${deck.rows}, 1fr);">
-            ${this.renderDeckGrid(deck, deckHotkeys)}
-          </div>
-          <div class="deck-sub-sections">
-            ${this.renderSubDecks(deck.id)}
-          </div>
-        </div>
-      `;
-    });
+        `;
+      }
 
-    // Empty state
-    if (standaloneHotkeys.length === 0 && decks.length === 0) {
-      html = `
-        <div class="empty-state">
-          <div class="empty-icon">🎹</div>
-          <h3>Keine Hotkeys vorhanden</h3>
-          <p>Erstelle deinen ersten Hotkey oder importiere eine Konfiguration</p>
-          <div class="empty-actions">
-            <button class="btn-primary" onclick="window.hotkeyUIManager.showCreateHotkeyDialog()">Hotkey erstellen</button>
-            <button class="btn-secondary" onclick="window.hotkeyUIManager.showCreateDeckDialog()">Deck erstellen</button>
+      // Main Decks with their hotkeys
+      mainDecks.forEach(deck => {
+        const deckHotkeys = this.hotkeyManager.getHotkeysByDeck(deck.id);
+        html += `
+          <div class="hotkey-section deck-section" data-deck-id="${deck.id}">
+            <div class="deck-header">
+              <h3 class="section-title">
+                <span class="deck-icon">🎛️</span>
+                ${deck.name}
+                <span class="deck-info">(${deck.rows}×${deck.columns})</span>
+              </h3>
+              <div class="deck-actions">
+                <button class="deck-action-btn" onclick="window.hotkeyUIManager.createSubDeck('${deck.id}')" title="Unterdeck erstellen">📁➕</button>
+                <button class="deck-action-btn" onclick="window.hotkeyUIManager.switchToDeck('${deck.id}')" title="Zu diesem Deck wechseln">🎯</button>
+                <button class="deck-action-btn" onclick="window.hotkeyUIManager.editDeck('${deck.id}')" title="Deck bearbeiten">✏️</button>
+                <button class="deck-action-btn" onclick="window.hotkeyUIManager.learnDeckHotkeys('${deck.id}')" title="Deck-Hotkeys lernen">🎓</button>
+              </div>
+            </div>
+            <div class="deck-grid" style="grid-template-columns: repeat(${deck.columns}, 1fr); grid-template-rows: repeat(${deck.rows}, 1fr);">
+              ${this.renderDeckGrid(deck, deckHotkeys)}
+            </div>
+            <div class="deck-sub-sections">
+              ${this.renderSubDecks(deck.id)}
+            </div>
           </div>
+        `;
+      });
+
+      // Empty state
+      if (standaloneHotkeys.length === 0 && mainDecks.length === 0) {
+        html = `
+          <div class="empty-state">
+            <div class="empty-icon">🎹</div>
+            <h3>Keine Hotkeys vorhanden</h3>
+            <p>Erstelle deinen ersten Hotkey oder importiere eine Konfiguration</p>
+            <div class="empty-actions">
+              <button class="btn-primary" onclick="window.hotkeyUIManager.showCreateHotkeyDialog()">Hotkey erstellen</button>
+              <button class="btn-secondary" onclick="window.hotkeyUIManager.showCreateDeckDialog()">Deck erstellen</button>
+            </div>
+          </div>
+        `;
+      }
+    } else if (currentDeck) {
+      // Einzelnes Deck Ansicht (Main-Deck oder Sub-Deck)
+      const deckHotkeys = this.hotkeyManager.getHotkeysByDeck(currentDeck.id);
+      const parentDeck = currentDeck.isSubDeck ? this.hotkeyManager.getParentDeck(currentDeck.id) : null;
+      
+      html = `
+        <div class="current-deck-view">
+          <div class="deck-breadcrumb">
+            <button class="breadcrumb-btn" onclick="window.hotkeyUIManager.backToMainDecks()">🏠 Main Decks</button>
+            ${parentDeck ? `
+              <span class="breadcrumb-separator">›</span>
+              <button class="breadcrumb-btn" onclick="window.hotkeyUIManager.switchToDeck('${parentDeck.id}')">${parentDeck.name}</button>
+            ` : ''}
+            <span class="breadcrumb-separator">›</span>
+            <span class="breadcrumb-current">${currentDeck.name}</span>
+          </div>
+
+          <div class="current-deck-header">
+            <div class="deck-title-section">
+              <h2 class="current-deck-title">
+                <span class="deck-type-badge ${currentDeck.isSubDeck ? 'sub-deck' : 'main-deck'}">
+                  ${currentDeck.isSubDeck ? '📁 Unter-Deck' : '🎛️ Haupt-Deck'}
+                </span>
+                ${currentDeck.name}
+              </h2>
+              ${currentDeck.description ? `<p class="deck-description">${currentDeck.description}</p>` : ''}
+            </div>
+            <div class="deck-actions">
+              <button class="deck-action-btn" onclick="window.hotkeyUIManager.createHotkeyForDeck('${currentDeck.id}')" title="Hotkey für dieses Deck erstellen">➕</button>
+              ${!currentDeck.isSubDeck ? `<button class="deck-action-btn" onclick="window.hotkeyUIManager.createSubDeck('${currentDeck.id}')" title="Unterdeck erstellen">📁➕</button>` : ''}
+              <button class="deck-action-btn" onclick="window.hotkeyUIManager.editDeck('${currentDeck.id}')" title="Deck bearbeiten">✏️</button>
+              <button class="deck-action-btn" onclick="window.hotkeyUIManager.learnDeckHotkeys('${currentDeck.id}')" title="Deck-Hotkeys lernen">🎓</button>
+            </div>
+          </div>
+
+          <div class="current-deck-grid" style="grid-template-columns: repeat(${currentDeck.columns}, 1fr); grid-template-rows: repeat(${currentDeck.rows}, 1fr);">
+            ${this.renderDeckGrid(currentDeck, deckHotkeys)}
+          </div>
+
+          ${!currentDeck.isSubDeck ? `
+            <div class="sub-decks-section">
+              ${this.renderSubDecks(currentDeck.id)}
+            </div>
+          ` : ''}
         </div>
       `;
     }
@@ -377,7 +448,7 @@ class HotkeyUIManager {
         <div class="sub-deck-list">
           ${subDecks.map(subDeck => `
             <div class="sub-deck-item" data-deck-id="${subDeck.id}">
-              <span class="sub-deck-name">${subDeck.name}</span>
+              <span class="sub-deck-name">📁 ${subDeck.name}</span>
               <div class="sub-deck-actions">
                 <button class="sub-deck-btn" onclick="window.hotkeyUIManager.switchToDeck('${subDeck.id}')" title="Wechseln">🎯</button>
                 <button class="sub-deck-btn" onclick="window.hotkeyUIManager.editDeck('${subDeck.id}')" title="Bearbeiten">✏️</button>
@@ -599,7 +670,13 @@ class HotkeyUIManager {
     });
   }
 
-  // ===== DECK ACTIONS =====
+  createHotkeyForDeck(deckId) {
+    this.showCreateHotkeyDialog({
+      deckId: deckId
+    });
+  }
+
+  // ===== DECK ACTIONS (ENHANCED) =====
 
   createSubDeck(parentDeckId) {
     const parentDeck = this.hotkeyManager.getDeckById(parentDeckId);
@@ -608,28 +685,21 @@ class HotkeyUIManager {
     const subDeckName = prompt(`Name für das Unterdeck von "${parentDeck.name}":`);
     if (!subDeckName) return;
 
-    const subDeck = this.hotkeyManager.createDeck({
+    const subDeck = this.hotkeyManager.createSubDeck(parentDeckId, {
       name: subDeckName,
-      description: `Unterdeck von ${parentDeck.name}`,
-      rows: parentDeck.rows,
-      columns: parentDeck.columns,
-      parentDeckId: parentDeckId
+      description: `Unterdeck von ${parentDeck.name}`
     });
 
     this.uiManager.showSuccessMessage(`Unterdeck "${subDeckName}" erstellt!`);
   }
 
   switchToDeck(deckId) {
-    const deck = this.hotkeyManager.getDeckById(deckId);
-    if (!deck) return;
-
-    this.hotkeyManager.switchToDeck(deckId);
-    
-    // Visual update for deck switching
-    this.updateDisplay();
-    
-    const deckType = deck.isSubDeck ? 'Unter-Deck' : 'Haupt-Deck';
-    this.uiManager.showSuccessMessage(`${deckType} "${deck.name}" aktiviert!`);
+    const success = this.hotkeyManager.switchToDeck(deckId);
+    if (success) {
+      const deck = this.hotkeyManager.getDeckById(deckId);
+      const deckType = deck.isSubDeck ? 'Unter-Deck' : 'Haupt-Deck';
+      this.uiManager.showSuccessMessage(`${deckType} "${deck.name}" aktiviert!`);
+    }
   }
 
   editDeck(deckId) {
@@ -706,11 +776,24 @@ class HotkeyUIManager {
     }
   }
 
-  // ===== EVENT HANDLERS =====
+  // ===== EVENT HANDLERS (ENHANCED) =====
 
-  onDeckSwitched(deck) {
-    this.updateDisplay();
+  onDeckSwitched(data) {
+    console.log('HotkeyUIManager: Deck switched event received:', data);
+    
+    // Force immediate display update
+    this.performUpdate();
+    
+    // Visual feedback
     this.triggerHapticFeedback();
+    
+    // Show success message for manual switches (not initial load)
+    if (data.deck && !data.isInitialLoad) {
+      const deckType = data.isSubDeck ? 'Unter-Deck' : 'Haupt-Deck';
+      this.uiManager.showSuccessMessage(`${deckType} "${data.deck.name}" aktiviert!`);
+    } else if (data.isMainView && !data.isInitialLoad) {
+      this.uiManager.showSuccessMessage('Zurück zu Main Decks');
+    }
   }
 
   onHotkeyExecuted(data) {
@@ -784,8 +867,105 @@ class HotkeyUIManager {
   }
 
   renderDecksView() {
-    // Implementation for deck view (simplified for now)
-    this.elements.content.innerHTML = '<p>Deck-Ansicht wird implementiert...</p>';
+    if (!this.elements.content) return;
+
+    const mainDecks = this.hotkeyManager.getMainDecks();
+    
+    let html = `
+      <div class="decks-overview">
+        <div class="deck-overview-header">
+          <h3>Deck-Übersicht</h3>
+          <p>Alle verfügbaren Haupt-Decks und deren Unter-Decks</p>
+        </div>
+        
+        <div class="decks-grid">
+          ${mainDecks.map(deck => this.renderDeckOverviewCard(deck)).join('')}
+        </div>
+      </div>
+    `;
+
+    if (mainDecks.length === 0) {
+      html = `
+        <div class="empty-state">
+          <div class="empty-icon">🎛️</div>
+          <h3>Keine Decks vorhanden</h3>
+          <p>Erstelle dein erstes Deck um loszulegen</p>
+          <div class="empty-actions">
+            <button class="btn-primary" onclick="window.hotkeyUIManager.showCreateDeckDialog()">Deck erstellen</button>
+          </div>
+        </div>
+      `;
+    }
+
+    this.elements.content.innerHTML = html;
+  }
+
+  renderDeckOverviewCard(deck) {
+    const deckHotkeys = this.hotkeyManager.getHotkeysByDeck(deck.id);
+    const subDecks = this.hotkeyManager.getSubDecks(deck.id);
+    const filledSlots = deckHotkeys.filter(h => h.position).length;
+    const totalSlots = deck.rows * deck.columns;
+
+    return `
+      <div class="deck-overview-card ${this.hotkeyManager.getActiveDeckId() === deck.id ? 'current' : ''}">
+        <div class="deck-card-header">
+          <div class="deck-card-title">${deck.name}</div>
+          <div class="deck-type-badge main-deck">Haupt-Deck</div>
+        </div>
+        <div class="deck-card-body">
+          <div class="deck-preview">
+            <div class="preview-grid" style="grid-template-columns: repeat(${deck.columns}, 1fr);">
+              ${Array(totalSlots).fill(0).map((_, i) => {
+                const row = Math.floor(i / deck.columns);
+                const col = i % deck.columns;
+                const hasHotkey = deckHotkeys.some(h => h.position && h.position.row === row && h.position.col === col);
+                return `<div class="preview-slot ${hasHotkey ? 'occupied' : 'empty'}"></div>`;
+              }).join('')}
+            </div>
+          </div>
+          <div class="deck-stats">
+            <div class="stat">
+              <strong>${filledSlots}/${totalSlots}</strong> belegt
+            </div>
+            <div class="stat">
+              <strong>${subDecks.length}</strong> Unter-Decks
+            </div>
+            <div class="stat">
+              <strong>${deck.rows}×${deck.columns}</strong> Layout
+            </div>
+          </div>
+          ${deck.description ? `<div class="deck-description">${deck.description}</div>` : ''}
+        </div>
+        <div class="deck-card-actions">
+          <button class="deck-card-btn primary" onclick="window.hotkeyUIManager.switchToDeck('${deck.id}')">🎯 Aktivieren</button>
+          <button class="deck-card-btn" onclick="window.hotkeyUIManager.createSubDeck('${deck.id}')">📁 Unter-Deck</button>
+          <button class="deck-card-btn" onclick="window.hotkeyUIManager.editDeck('${deck.id}')">✏️ Bearbeiten</button>
+          <button class="deck-card-btn danger" onclick="if(confirm('Deck wirklich löschen?')) window.hotkeyUIManager.deleteDeck('${deck.id}')">🗑️ Löschen</button>
+        </div>
+        ${subDecks.length > 0 ? `
+          <div class="sub-decks-preview">
+            <h5>Unter-Decks:</h5>
+            <div class="sub-deck-chips">
+              ${subDecks.map(subDeck => `
+                <div class="sub-deck-chip" onclick="window.hotkeyUIManager.switchToDeck('${subDeck.id}')">
+                  📁 ${subDeck.name}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  deleteDeck(deckId) {
+    const deck = this.hotkeyManager.getDeckById(deckId);
+    if (!deck) return;
+
+    if (confirm(`Deck "${deck.name}" und alle zugehörigen Hotkeys wirklich löschen?`)) {
+      this.hotkeyManager.deleteDeck(deckId);
+      this.uiManager.showSuccessMessage('Deck gelöscht');
+    }
   }
 
   // ===== CLEANUP =====

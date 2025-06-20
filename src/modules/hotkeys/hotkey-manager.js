@@ -4,6 +4,7 @@ class HotkeyManager {
     this.hotkeys = [];
     this.decks = [];
     this.currentDeck = null;
+    this.activeDeckId = null; // Aktives Deck für die visuelle Anzeige
     this.actionHistory = [];
     this.isLearningMode = false;
     this.learningCallback = null;
@@ -17,11 +18,19 @@ class HotkeyManager {
     // Load saved hotkeys and decks
     this.loadHotkeysFromStorage();
     this.loadDecksFromStorage();
+    this.loadActiveDeck();
     
     // Set up event listeners
     this.setupEventListeners();
     
     console.log('HotkeyManager: Enhanced system initialized with', this.hotkeys.length, 'hotkeys and', this.decks.length, 'decks');
+    
+    // Emit initial state
+    this.emit('initialized', {
+      hotkeys: this.hotkeys.length,
+      decks: this.decks.length,
+      currentDeck: this.currentDeck
+    });
   }
 
   // ===== HOTKEY MANAGEMENT =====
@@ -383,9 +392,19 @@ class HotkeyManager {
     return window.audioManager.setSourceMute(data.sourceName, data.muted);
   }
 
-  // ===== DECK MANAGEMENT =====
+  // ===== DECK MANAGEMENT (ENHANCED) =====
 
   createDeck(options = {}) {
+    // Wenn es ein Unter-Deck ist, nutze die Größe des Haupt-Decks
+    if (options.parentDeckId) {
+      const parentDeck = this.getDeckById(options.parentDeckId);
+      if (parentDeck) {
+        options.rows = parentDeck.rows;
+        options.columns = parentDeck.columns;
+        console.log(`HotkeyManager: Unter-Deck übernimmt Größe des Haupt-Decks: ${options.rows}x${options.columns}`);
+      }
+    }
+
     const deck = {
       id: this.generateId(),
       name: options.name || `Deck ${this.decks.length + 1}`,
@@ -403,13 +422,23 @@ class HotkeyManager {
     this.saveDecksToStorage();
     this.emit('deckCreated', deck);
 
-    console.log('HotkeyManager: Created deck:', deck.name, `(${deck.rows}x${deck.columns})`);
+    console.log('HotkeyManager: Created deck:', deck.name, `(${deck.rows}x${deck.columns})`, deck.isSubDeck ? '(Sub-Deck)' : '(Main-Deck)');
     return deck;
   }
 
   updateDeck(deckId, updates) {
     const deck = this.getDeckById(deckId);
     if (!deck) return false;
+
+    // Wenn die Größe eines Haupt-Decks geändert wird, aktualisiere auch alle Unter-Decks
+    if (!deck.isSubDeck && (updates.rows || updates.columns)) {
+      const subDecks = this.getSubDecks(deckId);
+      subDecks.forEach(subDeck => {
+        if (updates.rows) subDeck.rows = updates.rows;
+        if (updates.columns) subDeck.columns = updates.columns;
+        console.log(`HotkeyManager: Unter-Deck "${subDeck.name}" Größe aktualisiert zu ${subDeck.rows}x${subDeck.columns}`);
+      });
+    }
 
     Object.assign(deck, updates);
     this.saveDecksToStorage();
@@ -436,6 +465,14 @@ class HotkeyManager {
     subDecks.forEach(subDeck => this.deleteDeck(subDeck.id));
 
     this.decks.splice(index, 1);
+    
+    // Wenn das aktive Deck gelöscht wird, zurück zu Main-Decks
+    if (this.activeDeckId === deckId) {
+      this.activeDeckId = null;
+      this.currentDeck = null;
+      this.saveActiveDeck();
+    }
+
     this.saveDecksToStorage();
     this.saveHotkeysToStorage();
     this.emit('deckDeleted', deck);
@@ -459,19 +496,95 @@ class HotkeyManager {
     return this.decks.filter(d => d.parentDeckId === parentDeckId);
   }
 
+  // ===== ENHANCED DECK SWITCHING =====
+
   switchToDeck(deckId) {
     const deck = this.getDeckById(deckId);
-    if (!deck) return false;
+    if (!deck) {
+      console.error('HotkeyManager: Deck not found:', deckId);
+      return false;
+    }
+
+    console.log('HotkeyManager: Switching to deck:', deck.name, deck.isSubDeck ? '(Sub-Deck)' : '(Main-Deck)');
 
     this.currentDeck = deck;
-    this.emit('deckSwitched', deck);
+    this.activeDeckId = deckId;
+    
+    // Speichere aktives Deck für Persistenz
+    this.saveActiveDeck();
+    
+    this.emit('deckSwitched', {
+      deck: deck,
+      deckId: deckId,
+      isSubDeck: deck.isSubDeck,
+      parentDeck: deck.parentDeckId ? this.getDeckById(deck.parentDeckId) : null
+    });
 
-    console.log('HotkeyManager: Switched to deck:', deck.name);
+    return true;
+  }
+
+  switchToMainDecks() {
+    console.log('HotkeyManager: Switching back to main decks view');
+    
+    this.currentDeck = null;
+    this.activeDeckId = null;
+    
+    this.saveActiveDeck();
+    
+    this.emit('deckSwitched', {
+      deck: null,
+      deckId: null,
+      isSubDeck: false,
+      parentDeck: null,
+      isMainView: true
+    });
+
     return true;
   }
 
   getCurrentDeck() {
     return this.currentDeck;
+  }
+
+  getActiveDeckId() {
+    return this.activeDeckId;
+  }
+
+  isMainDecksView() {
+    return this.activeDeckId === null;
+  }
+
+  // ===== SUB-DECK ENHANCED METHODS =====
+
+  createSubDeck(parentDeckId, options = {}) {
+    const parentDeck = this.getDeckById(parentDeckId);
+    if (!parentDeck) {
+      console.error('HotkeyManager: Parent deck not found:', parentDeckId);
+      return null;
+    }
+
+    if (parentDeck.isSubDeck) {
+      console.error('HotkeyManager: Cannot create sub-deck of a sub-deck');
+      return null;
+    }
+
+    // Automatisch Größe vom Haupt-Deck übernehmen
+    const subDeckOptions = {
+      ...options,
+      parentDeckId: parentDeckId,
+      rows: parentDeck.rows,
+      columns: parentDeck.columns,
+      name: options.name || `${parentDeck.name} - Unterdeck`
+    };
+
+    return this.createDeck(subDeckOptions);
+  }
+
+  getParentDeck(subDeckId) {
+    const subDeck = this.getDeckById(subDeckId);
+    if (!subDeck || !subDeck.parentDeckId) return null;
+    
+    return this.getDeckById(subDeck.parentDeckId);
   }
 
   // ===== HOTKEY LEARNING =====
@@ -705,7 +818,7 @@ class HotkeyManager {
     this.emit('hapticFeedback');
   }
 
-  // ===== STORAGE =====
+  // ===== STORAGE (ENHANCED) =====
 
   saveHotkeysToStorage() {
     if (window.settingsManager) {
@@ -728,6 +841,26 @@ class HotkeyManager {
   loadDecksFromStorage() {
     if (window.settingsManager) {
       this.decks = window.settingsManager.get('hotkeys.decks', []);
+    }
+  }
+
+  saveActiveDeck() {
+    if (window.settingsManager) {
+      window.settingsManager.set('hotkeys.activeDeckId', this.activeDeckId);
+    }
+  }
+
+  loadActiveDeck() {
+    if (window.settingsManager) {
+      this.activeDeckId = window.settingsManager.get('hotkeys.activeDeckId', null);
+      if (this.activeDeckId) {
+        this.currentDeck = this.getDeckById(this.activeDeckId);
+        if (!this.currentDeck) {
+          // Deck existiert nicht mehr, zurück zu Main-Decks
+          this.activeDeckId = null;
+          this.saveActiveDeck();
+        }
+      }
     }
   }
 
@@ -759,14 +892,17 @@ class HotkeyManager {
     this.events[event].forEach(callback => callback(data));
   }
 
-  // ===== PUBLIC API =====
+  // ===== PUBLIC API (ENHANCED) =====
 
   getStats() {
     return {
       totalHotkeys: this.hotkeys.length,
       enabledHotkeys: this.hotkeys.filter(h => h.enabled).length,
       totalDecks: this.decks.length,
-      currentDeck: this.currentDeck?.name || 'None',
+      mainDecks: this.getMainDecks().length,
+      subDecks: this.decks.filter(d => d.isSubDeck).length,
+      currentDeck: this.currentDeck?.name || 'Main Decks',
+      isMainView: this.isMainDecksView(),
       totalExecutions: this.hotkeys.reduce((sum, h) => sum + h.triggerCount, 0),
       averageActionsPerHotkey: this.hotkeys.length > 0 ? 
         this.hotkeys.reduce((sum, h) => sum + h.actions.length, 0) / this.hotkeys.length : 0
@@ -777,23 +913,58 @@ class HotkeyManager {
     return {
       hotkeys: this.hotkeys,
       decks: this.decks,
-      version: '1.0',
+      activeDeckId: this.activeDeckId,
+      version: '1.1',
       exportedAt: new Date().toISOString()
     };
   }
 
   importConfiguration(config) {
-    if (config.version !== '1.0') {
+    if (!config.version || parseFloat(config.version) < 1.0) {
       throw new Error('Unsupported configuration version');
     }
 
     this.hotkeys = config.hotkeys || [];
     this.decks = config.decks || [];
     
+    // Wiederherstellung des aktiven Decks falls vorhanden
+    if (config.activeDeckId) {
+      const deck = this.getDeckById(config.activeDeckId);
+      if (deck) {
+        this.activeDeckId = config.activeDeckId;
+        this.currentDeck = deck;
+      }
+    } else {
+      this.activeDeckId = null;
+      this.currentDeck = null;
+    }
+    
     this.saveHotkeysToStorage();
     this.saveDecksToStorage();
+    this.saveActiveDeck();
     
     this.emit('configurationImported');
+    this.emit('deckSwitched', {
+      deck: this.currentDeck,
+      deckId: this.activeDeckId,
+      isSubDeck: this.currentDeck?.isSubDeck || false,
+      parentDeck: this.currentDeck?.parentDeckId ? this.getDeckById(this.currentDeck.parentDeckId) : null,
+      isMainView: this.isMainDecksView()
+    });
+  }
+
+  // ===== DEBUG METHODS =====
+
+  debugInfo() {
+    return {
+      hotkeys: this.hotkeys.length,
+      decks: this.decks.length,
+      currentDeck: this.currentDeck?.name || 'Main Decks',
+      activeDeckId: this.activeDeckId,
+      isMainView: this.isMainDecksView(),
+      isLearning: this.isLearningMode,
+      stats: this.getStats()
+    };
   }
 }
 
