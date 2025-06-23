@@ -1,15 +1,14 @@
-// Enhanced Hotkey Manager - Erweiterte Hotkey-Funktionalität mit Decks und Multi-Aktionen
+// Enhanced Hotkey Manager - Überarbeitetes Deck-System mit persistenter Ansicht
 class HotkeyManager {
   constructor() {
     this.hotkeys = [];
     this.decks = [];
-    this.currentDeck = null;
-    this.activeDeckId = null; // Aktives Deck für die visuelle Anzeige
+    this.activeSubDecks = {}; // Tracks which sub-deck is active for each main deck
     this.actionHistory = [];
     this.isLearningMode = false;
     this.learningCallback = null;
     
-    console.log('HotkeyManager: Initializing enhanced hotkey system...');
+    console.log('HotkeyManager: Initializing enhanced hotkey system with persistent view...');
     
     this.initializeManager();
   }
@@ -18,7 +17,7 @@ class HotkeyManager {
     // Load saved hotkeys and decks
     this.loadHotkeysFromStorage();
     this.loadDecksFromStorage();
-    this.loadActiveDeck();
+    this.loadActiveSubDecks();
     
     // Set up event listeners
     this.setupEventListeners();
@@ -29,7 +28,7 @@ class HotkeyManager {
     this.emit('initialized', {
       hotkeys: this.hotkeys.length,
       decks: this.decks.length,
-      currentDeck: this.currentDeck
+      activeSubDecks: this.activeSubDecks
     });
   }
 
@@ -96,6 +95,215 @@ class HotkeyManager {
 
   getStandaloneHotkeys() {
     return this.hotkeys.filter(h => !h.deckId);
+  }
+
+  // ===== ENHANCED DECK MANAGEMENT =====
+
+  createDeck(options = {}) {
+    // Wenn es ein Unter-Deck ist, nutze die Größe des Haupt-Decks
+    if (options.parentDeckId) {
+      const parentDeck = this.getDeckById(options.parentDeckId);
+      if (parentDeck) {
+        options.rows = parentDeck.rows;
+        options.columns = parentDeck.columns;
+        console.log(`HotkeyManager: Unter-Deck übernimmt Größe des Haupt-Decks: ${options.rows}x${options.columns}`);
+      }
+    }
+
+    const deck = {
+      id: this.generateId(),
+      name: options.name || `Deck ${this.decks.length + 1}`,
+      description: options.description || '',
+      rows: options.rows || 4,
+      columns: options.columns || 4,
+      parentDeckId: options.parentDeckId || null,
+      isSubDeck: !!options.parentDeckId,
+      hotkeys: [], // Will be populated with positioned hotkeys
+      enabled: true,
+      createdAt: Date.now()
+    };
+
+    this.decks.push(deck);
+    this.saveDecksToStorage();
+    this.emit('deckCreated', deck);
+
+    console.log('HotkeyManager: Created deck:', deck.name, `(${deck.rows}x${deck.columns})`, deck.isSubDeck ? '(Sub-Deck)' : '(Main-Deck)');
+    return deck;
+  }
+
+  updateDeck(deckId, updates) {
+    const deck = this.getDeckById(deckId);
+    if (!deck) return false;
+
+    // Wenn die Größe eines Haupt-Decks geändert wird, aktualisiere auch alle Unter-Decks
+    if (!deck.isSubDeck && (updates.rows || updates.columns)) {
+      const subDecks = this.getSubDecks(deckId);
+      subDecks.forEach(subDeck => {
+        if (updates.rows) subDeck.rows = updates.rows;
+        if (updates.columns) subDeck.columns = updates.columns;
+        console.log(`HotkeyManager: Unter-Deck "${subDeck.name}" Größe aktualisiert zu ${subDeck.rows}x${subDeck.columns}`);
+      });
+    }
+
+    Object.assign(deck, updates);
+    this.saveDecksToStorage();
+    this.emit('deckUpdated', deck);
+
+    return true;
+  }
+
+  deleteDeck(deckId) {
+    const index = this.decks.findIndex(d => d.id === deckId);
+    if (index === -1) return false;
+
+    const deck = this.decks[index];
+    
+    // Move hotkeys to standalone
+    const deckHotkeys = this.getHotkeysByDeck(deckId);
+    deckHotkeys.forEach(hotkey => {
+      hotkey.deckId = null;
+      hotkey.position = null;
+    });
+
+    // Delete sub-decks
+    const subDecks = this.getSubDecks(deckId);
+    subDecks.forEach(subDeck => this.deleteDeck(subDeck.id));
+
+    // Remove from active sub-decks tracking
+    delete this.activeSubDecks[deckId];
+
+    this.decks.splice(index, 1);
+    
+    this.saveDecksToStorage();
+    this.saveHotkeysToStorage();
+    this.saveActiveSubDecks();
+    this.emit('deckDeleted', deck);
+
+    return true;
+  }
+
+  getDeckById(deckId) {
+    return this.decks.find(d => d.id === deckId);
+  }
+
+  getAllDecks() {
+    return [...this.decks];
+  }
+
+  getMainDecks() {
+    return this.decks.filter(d => !d.isSubDeck);
+  }
+
+  getSubDecks(parentDeckId) {
+    return this.decks.filter(d => d.parentDeckId === parentDeckId);
+  }
+
+  // ===== NEUE SUB-DECK SWITCHING LOGIK =====
+
+  /**
+   * Aktiviert ein Unter-Deck für ein bestimmtes Haupt-Deck
+   * Ersetzt nur die Felder des Haupt-Decks, andere Decks bleiben sichtbar
+   */
+  switchToSubDeck(mainDeckId, subDeckId) {
+    const mainDeck = this.getDeckById(mainDeckId);
+    const subDeck = this.getDeckById(subDeckId);
+    
+    if (!mainDeck || !subDeck || subDeck.parentDeckId !== mainDeckId) {
+      console.error('HotkeyManager: Invalid deck switch parameters');
+      return false;
+    }
+
+    console.log(`HotkeyManager: Switching main deck "${mainDeck.name}" to sub-deck "${subDeck.name}"`);
+
+    // Track active sub-deck for this main deck
+    this.activeSubDecks[mainDeckId] = subDeckId;
+    this.saveActiveSubDecks();
+    
+    this.emit('subDeckSwitched', {
+      mainDeckId: mainDeckId,
+      subDeckId: subDeckId,
+      mainDeck: mainDeck,
+      subDeck: subDeck
+    });
+
+    return true;
+  }
+
+  /**
+   * Deaktiviert das Unter-Deck und zeigt wieder das Haupt-Deck an
+   */
+  switchBackToMainDeck(mainDeckId) {
+    const mainDeck = this.getDeckById(mainDeckId);
+    if (!mainDeck) return false;
+
+    console.log(`HotkeyManager: Switching back to main deck "${mainDeck.name}"`);
+
+    delete this.activeSubDecks[mainDeckId];
+    this.saveActiveSubDecks();
+    
+    this.emit('subDeckSwitched', {
+      mainDeckId: mainDeckId,
+      subDeckId: null,
+      mainDeck: mainDeck,
+      subDeck: null
+    });
+
+    return true;
+  }
+
+  /**
+   * Gibt das aktive Unter-Deck für ein Haupt-Deck zurück
+   */
+  getActiveSubDeck(mainDeckId) {
+    const subDeckId = this.activeSubDecks[mainDeckId];
+    return subDeckId ? this.getDeckById(subDeckId) : null;
+  }
+
+  /**
+   * Prüft ob ein Haupt-Deck gerade ein Unter-Deck anzeigt
+   */
+  isShowingSubDeck(mainDeckId) {
+    return !!this.activeSubDecks[mainDeckId];
+  }
+
+  /**
+   * Gibt alle aktuell aktiven Unter-Decks zurück
+   */
+  getActiveSubDecks() {
+    return { ...this.activeSubDecks };
+  }
+
+  // ===== ENHANCED SUB-DECK METHODS =====
+
+  createSubDeck(parentDeckId, options = {}) {
+    const parentDeck = this.getDeckById(parentDeckId);
+    if (!parentDeck) {
+      console.error('HotkeyManager: Parent deck not found:', parentDeckId);
+      return null;
+    }
+
+    if (parentDeck.isSubDeck) {
+      console.error('HotkeyManager: Cannot create sub-deck of a sub-deck');
+      return null;
+    }
+
+    // Automatisch Größe vom Haupt-Deck übernehmen
+    const subDeckOptions = {
+      ...options,
+      parentDeckId: parentDeckId,
+      rows: parentDeck.rows,
+      columns: parentDeck.columns,
+      name: options.name || `${parentDeck.name} - Unterdeck`
+    };
+
+    return this.createDeck(subDeckOptions);
+  }
+
+  getParentDeck(subDeckId) {
+    const subDeck = this.getDeckById(subDeckId);
+    if (!subDeck || !subDeck.parentDeckId) return null;
+    
+    return this.getDeckById(subDeck.parentDeckId);
   }
 
   // ===== TRIGGER MANAGEMENT =====
@@ -195,6 +403,7 @@ class HotkeyManager {
       'obs_recording_toggle',
       'obs_streaming_toggle',
       'deck_switch',
+      'sub_deck_switch',
       'delay',
       'audio_volume',
       'audio_mute'
@@ -270,6 +479,9 @@ class HotkeyManager {
       case 'obs_streaming_toggle':
         return this.executeObsStreamingToggle();
       
+      case 'sub_deck_switch':
+        return this.executeSubDeckSwitch(action.data);
+      
       case 'deck_switch':
         return this.executeDeckSwitch(action.data);
       
@@ -287,7 +499,34 @@ class HotkeyManager {
     }
   }
 
-  // ===== ACTION IMPLEMENTATIONS =====
+  // ===== NEW ACTION IMPLEMENTATIONS =====
+
+  async executeSubDeckSwitch(data) {
+    if (data.subDeckId) {
+      return this.switchToSubDeck(data.mainDeckId, data.subDeckId);
+    } else {
+      return this.switchBackToMainDeck(data.mainDeckId);
+    }
+  }
+
+  async executeDeckSwitch(data) {
+    const deck = this.getDeckById(data.deckId);
+    if (!deck) {
+      throw new Error(`Deck with ID ${data.deckId} not found`);
+    }
+    
+    if (deck.isSubDeck) {
+      // If it's a sub-deck, switch to it
+      return this.switchToSubDeck(deck.parentDeckId, deck.id);
+    } else {
+      // If it's a main deck, we could implement main deck switching logic here
+      // For now, just log that this deck would be activated
+      console.log(`HotkeyManager: Would switch to main deck: ${deck.name}`);
+      return true;
+    }
+  }
+
+  // ===== EXISTING ACTION IMPLEMENTATIONS =====
 
   async executeObsSceneSwitch(data) {
     if (!window.obsManager || !window.obsManager.isConnected) {
@@ -374,10 +613,6 @@ class HotkeyManager {
       window.obsManager.startStream();
   }
 
-  async executeDeckSwitch(data) {
-    return this.switchToDeck(data.deckId);
-  }
-
   async executeAudioVolume(data) {
     if (!window.audioManager) {
       throw new Error('Audio manager not available');
@@ -390,201 +625,6 @@ class HotkeyManager {
       throw new Error('Audio manager not available');
     }
     return window.audioManager.setSourceMute(data.sourceName, data.muted);
-  }
-
-  // ===== DECK MANAGEMENT (ENHANCED) =====
-
-  createDeck(options = {}) {
-    // Wenn es ein Unter-Deck ist, nutze die Größe des Haupt-Decks
-    if (options.parentDeckId) {
-      const parentDeck = this.getDeckById(options.parentDeckId);
-      if (parentDeck) {
-        options.rows = parentDeck.rows;
-        options.columns = parentDeck.columns;
-        console.log(`HotkeyManager: Unter-Deck übernimmt Größe des Haupt-Decks: ${options.rows}x${options.columns}`);
-      }
-    }
-
-    const deck = {
-      id: this.generateId(),
-      name: options.name || `Deck ${this.decks.length + 1}`,
-      description: options.description || '',
-      rows: options.rows || 4,
-      columns: options.columns || 4,
-      parentDeckId: options.parentDeckId || null,
-      isSubDeck: !!options.parentDeckId,
-      hotkeys: [], // Will be populated with positioned hotkeys
-      enabled: true,
-      createdAt: Date.now()
-    };
-
-    this.decks.push(deck);
-    this.saveDecksToStorage();
-    this.emit('deckCreated', deck);
-
-    console.log('HotkeyManager: Created deck:', deck.name, `(${deck.rows}x${deck.columns})`, deck.isSubDeck ? '(Sub-Deck)' : '(Main-Deck)');
-    return deck;
-  }
-
-  updateDeck(deckId, updates) {
-    const deck = this.getDeckById(deckId);
-    if (!deck) return false;
-
-    // Wenn die Größe eines Haupt-Decks geändert wird, aktualisiere auch alle Unter-Decks
-    if (!deck.isSubDeck && (updates.rows || updates.columns)) {
-      const subDecks = this.getSubDecks(deckId);
-      subDecks.forEach(subDeck => {
-        if (updates.rows) subDeck.rows = updates.rows;
-        if (updates.columns) subDeck.columns = updates.columns;
-        console.log(`HotkeyManager: Unter-Deck "${subDeck.name}" Größe aktualisiert zu ${subDeck.rows}x${subDeck.columns}`);
-      });
-    }
-
-    Object.assign(deck, updates);
-    this.saveDecksToStorage();
-    this.emit('deckUpdated', deck);
-
-    return true;
-  }
-
-  deleteDeck(deckId) {
-    const index = this.decks.findIndex(d => d.id === deckId);
-    if (index === -1) return false;
-
-    const deck = this.decks[index];
-    
-    // Move hotkeys to standalone
-    const deckHotkeys = this.getHotkeysByDeck(deckId);
-    deckHotkeys.forEach(hotkey => {
-      hotkey.deckId = null;
-      hotkey.position = null;
-    });
-
-    // Delete sub-decks
-    const subDecks = this.getSubDecks(deckId);
-    subDecks.forEach(subDeck => this.deleteDeck(subDeck.id));
-
-    this.decks.splice(index, 1);
-    
-    // Wenn das aktive Deck gelöscht wird, zurück zu Main-Decks
-    if (this.activeDeckId === deckId) {
-      this.activeDeckId = null;
-      this.currentDeck = null;
-      this.saveActiveDeck();
-    }
-
-    this.saveDecksToStorage();
-    this.saveHotkeysToStorage();
-    this.emit('deckDeleted', deck);
-
-    return true;
-  }
-
-  getDeckById(deckId) {
-    return this.decks.find(d => d.id === deckId);
-  }
-
-  getAllDecks() {
-    return [...this.decks];
-  }
-
-  getMainDecks() {
-    return this.decks.filter(d => !d.isSubDeck);
-  }
-
-  getSubDecks(parentDeckId) {
-    return this.decks.filter(d => d.parentDeckId === parentDeckId);
-  }
-
-  // ===== ENHANCED DECK SWITCHING =====
-
-  switchToDeck(deckId) {
-    const deck = this.getDeckById(deckId);
-    if (!deck) {
-      console.error('HotkeyManager: Deck not found:', deckId);
-      return false;
-    }
-
-    console.log('HotkeyManager: Switching to deck:', deck.name, deck.isSubDeck ? '(Sub-Deck)' : '(Main-Deck)');
-
-    this.currentDeck = deck;
-    this.activeDeckId = deckId;
-    
-    // Speichere aktives Deck für Persistenz
-    this.saveActiveDeck();
-    
-    this.emit('deckSwitched', {
-      deck: deck,
-      deckId: deckId,
-      isSubDeck: deck.isSubDeck,
-      parentDeck: deck.parentDeckId ? this.getDeckById(deck.parentDeckId) : null
-    });
-
-    return true;
-  }
-
-  switchToMainDecks() {
-    console.log('HotkeyManager: Switching back to main decks view');
-    
-    this.currentDeck = null;
-    this.activeDeckId = null;
-    
-    this.saveActiveDeck();
-    
-    this.emit('deckSwitched', {
-      deck: null,
-      deckId: null,
-      isSubDeck: false,
-      parentDeck: null,
-      isMainView: true
-    });
-
-    return true;
-  }
-
-  getCurrentDeck() {
-    return this.currentDeck;
-  }
-
-  getActiveDeckId() {
-    return this.activeDeckId;
-  }
-
-  isMainDecksView() {
-    return this.activeDeckId === null;
-  }
-
-  // ===== SUB-DECK ENHANCED METHODS =====
-
-  createSubDeck(parentDeckId, options = {}) {
-    const parentDeck = this.getDeckById(parentDeckId);
-    if (!parentDeck) {
-      console.error('HotkeyManager: Parent deck not found:', parentDeckId);
-      return null;
-    }
-
-    if (parentDeck.isSubDeck) {
-      console.error('HotkeyManager: Cannot create sub-deck of a sub-deck');
-      return null;
-    }
-
-    // Automatisch Größe vom Haupt-Deck übernehmen
-    const subDeckOptions = {
-      ...options,
-      parentDeckId: parentDeckId,
-      rows: parentDeck.rows,
-      columns: parentDeck.columns,
-      name: options.name || `${parentDeck.name} - Unterdeck`
-    };
-
-    return this.createDeck(subDeckOptions);
-  }
-
-  getParentDeck(subDeckId) {
-    const subDeck = this.getDeckById(subDeckId);
-    if (!subDeck || !subDeck.parentDeckId) return null;
-    
-    return this.getDeckById(subDeck.parentDeckId);
   }
 
   // ===== HOTKEY LEARNING =====
@@ -818,7 +858,7 @@ class HotkeyManager {
     this.emit('hapticFeedback');
   }
 
-  // ===== STORAGE (ENHANCED) =====
+  // ===== ENHANCED STORAGE =====
 
   saveHotkeysToStorage() {
     if (window.settingsManager) {
@@ -844,23 +884,15 @@ class HotkeyManager {
     }
   }
 
-  saveActiveDeck() {
+  saveActiveSubDecks() {
     if (window.settingsManager) {
-      window.settingsManager.set('hotkeys.activeDeckId', this.activeDeckId);
+      window.settingsManager.set('hotkeys.activeSubDecks', this.activeSubDecks);
     }
   }
 
-  loadActiveDeck() {
+  loadActiveSubDecks() {
     if (window.settingsManager) {
-      this.activeDeckId = window.settingsManager.get('hotkeys.activeDeckId', null);
-      if (this.activeDeckId) {
-        this.currentDeck = this.getDeckById(this.activeDeckId);
-        if (!this.currentDeck) {
-          // Deck existiert nicht mehr, zurück zu Main-Decks
-          this.activeDeckId = null;
-          this.saveActiveDeck();
-        }
-      }
+      this.activeSubDecks = window.settingsManager.get('hotkeys.activeSubDecks', {});
     }
   }
 
@@ -901,8 +933,7 @@ class HotkeyManager {
       totalDecks: this.decks.length,
       mainDecks: this.getMainDecks().length,
       subDecks: this.decks.filter(d => d.isSubDeck).length,
-      currentDeck: this.currentDeck?.name || 'Main Decks',
-      isMainView: this.isMainDecksView(),
+      activeSubDecks: Object.keys(this.activeSubDecks).length,
       totalExecutions: this.hotkeys.reduce((sum, h) => sum + h.triggerCount, 0),
       averageActionsPerHotkey: this.hotkeys.length > 0 ? 
         this.hotkeys.reduce((sum, h) => sum + h.actions.length, 0) / this.hotkeys.length : 0
@@ -913,8 +944,8 @@ class HotkeyManager {
     return {
       hotkeys: this.hotkeys,
       decks: this.decks,
-      activeDeckId: this.activeDeckId,
-      version: '1.1',
+      activeSubDecks: this.activeSubDecks,
+      version: '2.0',
       exportedAt: new Date().toISOString()
     };
   }
@@ -926,31 +957,14 @@ class HotkeyManager {
 
     this.hotkeys = config.hotkeys || [];
     this.decks = config.decks || [];
-    
-    // Wiederherstellung des aktiven Decks falls vorhanden
-    if (config.activeDeckId) {
-      const deck = this.getDeckById(config.activeDeckId);
-      if (deck) {
-        this.activeDeckId = config.activeDeckId;
-        this.currentDeck = deck;
-      }
-    } else {
-      this.activeDeckId = null;
-      this.currentDeck = null;
-    }
+    this.activeSubDecks = config.activeSubDecks || {};
     
     this.saveHotkeysToStorage();
     this.saveDecksToStorage();
-    this.saveActiveDeck();
+    this.saveActiveSubDecks();
     
     this.emit('configurationImported');
-    this.emit('deckSwitched', {
-      deck: this.currentDeck,
-      deckId: this.activeDeckId,
-      isSubDeck: this.currentDeck?.isSubDeck || false,
-      parentDeck: this.currentDeck?.parentDeckId ? this.getDeckById(this.currentDeck.parentDeckId) : null,
-      isMainView: this.isMainDecksView()
-    });
+    this.emit('subDeckSwitched', { forceUpdate: true });
   }
 
   // ===== DEBUG METHODS =====
@@ -959,9 +973,7 @@ class HotkeyManager {
     return {
       hotkeys: this.hotkeys.length,
       decks: this.decks.length,
-      currentDeck: this.currentDeck?.name || 'Main Decks',
-      activeDeckId: this.activeDeckId,
-      isMainView: this.isMainDecksView(),
+      activeSubDecks: this.activeSubDecks,
       isLearning: this.isLearningMode,
       stats: this.getStats()
     };
@@ -969,5 +981,5 @@ class HotkeyManager {
 }
 
 // Export for global access
-console.log('HotkeyManager: Enhanced hotkey system loaded');
+console.log('HotkeyManager: Enhanced hotkey system with persistent deck view loaded');
 window.HotkeyManager = HotkeyManager;

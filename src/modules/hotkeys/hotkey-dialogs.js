@@ -77,6 +77,7 @@ class HotkeyDialogManager {
                 </optgroup>
                 <optgroup label="Deck-Steuerung">
                   <option value="deck_switch">Deck wechseln</option>
+                  <option value="sub_deck_switch">Unter-Deck wechseln</option>
                 </optgroup>
                 <optgroup label="Hilfsmittel">
                   <option value="delay">Verzögerung</option>
@@ -269,6 +270,9 @@ class HotkeyDialogManager {
       case 'deck_switch':
         configHTML = this.getDeckSwitchConfig();
         break;
+      case 'sub_deck_switch':
+        configHTML = this.getSubDeckSwitchConfig();
+        break;
       case 'delay':
         configHTML = this.getDelayConfig();
         break;
@@ -298,6 +302,7 @@ class HotkeyDialogManager {
       'audio_volume': 'Lautstärke setzen',
       'audio_mute': 'Stumm schalten',
       'deck_switch': 'Deck wechseln',
+      'sub_deck_switch': 'Unter-Deck wechseln',
       'delay': 'Verzögerung'
     };
     return titles[actionType] || actionType;
@@ -487,6 +492,33 @@ class HotkeyDialogManager {
     `;
   }
 
+  getSubDeckSwitchConfig() {
+    const mainDecks = this.hotkeyManager.getMainDecks();
+    return `
+      <div class="config-group">
+        <label>Haupt-Deck:</label>
+        <select name="mainDeckId" required onchange="window.hotkeyDialogManager.updateSubDeckOptions(this.value, this.parentElement.parentElement)">
+          <option value="">Haupt-Deck auswählen...</option>
+          ${mainDecks.map(deck => `<option value="${deck.id}">${deck.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="config-group">
+        <label>Aktion:</label>
+        <select name="actionType" required onchange="window.hotkeyDialogManager.toggleSubDeckOptions(this.value, this.parentElement.parentElement)">
+          <option value="">Aktion auswählen...</option>
+          <option value="switch_to_subdeck">Zu Unter-Deck wechseln</option>
+          <option value="back_to_main">Zurück zu Haupt-Deck</option>
+        </select>
+      </div>
+      <div class="config-group subdeck-selection" style="display: none;">
+        <label>Unter-Deck:</label>
+        <select name="subDeckId">
+          <option value="">Unter-Deck auswählen...</option>
+        </select>
+      </div>
+    `;
+  }
+
   getDelayConfig() {
     return `
       <div class="config-group">
@@ -544,8 +576,13 @@ class HotkeyDialogManager {
       const name = input.name;
       let value = input.value;
 
-      // Skip empty values
-      if (!name || value === '') return;
+      // Skip empty values (except for required special cases)
+      if (!name || value === '') {
+        // For sub_deck_switch, allow empty subDeckId if switching back to main
+        if (!(actionType === 'sub_deck_switch' && name === 'subDeckId')) {
+          return;
+        }
+      }
 
       // Type conversion
       if (input.type === 'number') {
@@ -572,7 +609,34 @@ class HotkeyDialogManager {
       config[name] = value;
     });
 
+    // Special handling for sub_deck_switch
+    if (actionType === 'sub_deck_switch') {
+      return this.processSubDeckSwitchConfig(config);
+    }
+
     return Object.keys(config).length > 0 ? config : null;
+  }
+
+  processSubDeckSwitchConfig(config) {
+    const { mainDeckId, actionType, subDeckId } = config;
+    
+    if (!mainDeckId || !actionType) {
+      console.error('Missing mainDeckId or actionType for sub_deck_switch');
+      return null;
+    }
+
+    const result = { mainDeckId };
+
+    if (actionType === 'switch_to_subdeck') {
+      if (!subDeckId) {
+        console.error('Missing subDeckId for switch_to_subdeck action');
+        return null;
+      }
+      result.subDeckId = subDeckId;
+    }
+    // For 'back_to_main', we don't need subDeckId
+
+    return result;
   }
 
   // ===== CREATE DECK DIALOG =====
@@ -1098,6 +1162,15 @@ class HotkeyDialogManager {
       case 'deck_switch':
         const deck = this.hotkeyManager.getDeckById(action.data.deckId);
         return `Deck wechseln: ${deck?.name || 'Unbekannt'}`;
+      case 'sub_deck_switch':
+        if (action.data.subDeckId) {
+          const subDeck = this.hotkeyManager.getDeckById(action.data.subDeckId);
+          const mainDeck = this.hotkeyManager.getDeckById(action.data.mainDeckId);
+          return `Zu Unter-Deck wechseln: ${subDeck?.name || 'Unbekannt'} (${mainDeck?.name || 'Unbekannt'})`;
+        } else {
+          const mainDeck = this.hotkeyManager.getDeckById(action.data.mainDeckId);
+          return `Zurück zu Haupt-Deck: ${mainDeck?.name || 'Unbekannt'}`;
+        }
       case 'audio_volume':
         return `Lautstärke: ${action.data.sourceName} → ${Math.round(action.data.volume * 100)}%`;
       case 'audio_mute':
@@ -1482,6 +1555,41 @@ class HotkeyDialogManager {
     }
   }
 
+  // ===== SUB-DECK SWITCH HELPERS =====
+
+  updateSubDeckOptions(mainDeckId, actionContainer) {
+    const subDeckSelect = actionContainer.querySelector('select[name="subDeckId"]');
+    if (!subDeckSelect) return;
+
+    if (!mainDeckId) {
+      subDeckSelect.innerHTML = '<option value="">Unter-Deck auswählen...</option>';
+      return;
+    }
+
+    const subDecks = this.hotkeyManager.getSubDecks(mainDeckId);
+    const subDecksHtml = subDecks.map(deck => 
+      `<option value="${deck.id}">${deck.name}</option>`
+    ).join('');
+
+    subDeckSelect.innerHTML = `
+      <option value="">Unter-Deck auswählen...</option>
+      ${subDecksHtml}
+    `;
+  }
+
+  toggleSubDeckOptions(actionType, actionContainer) {
+    const subDeckSelection = actionContainer.querySelector('.subdeck-selection');
+    if (!subDeckSelection) return;
+
+    if (actionType === 'switch_to_subdeck') {
+      subDeckSelection.style.display = 'block';
+      subDeckSelection.querySelector('select').setAttribute('required', 'required');
+    } else {
+      subDeckSelection.style.display = 'none';
+      subDeckSelection.querySelector('select').removeAttribute('required');
+    }
+  }
+
   // ===== UTILITY METHODS =====
 
   createDialog(id, title, content, buttons = {}) {
@@ -1543,6 +1651,11 @@ class HotkeyDialogManager {
       }
     };
     document.addEventListener('keydown', handleEscape);
+
+    // Force refresh of styles
+    setTimeout(() => {
+      overlay.style.display = 'flex';
+    }, 10);
 
     return overlay;
   }
