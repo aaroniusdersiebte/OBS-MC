@@ -1,663 +1,393 @@
-// Hotkey Dialog Manager - Dialoge für Hotkey-Erstellung und -Bearbeitung
+// Modern Hotkey Dialog Manager - Fokus auf Deck-Learning und Essentials
 class HotkeyDialogManager {
   constructor(hotkeyManager, hotkeyUIManager, uiManager) {
     this.hotkeyManager = hotkeyManager;
     this.hotkeyUIManager = hotkeyUIManager;
     this.uiManager = uiManager;
     this.currentDialog = null;
-    this.learningState = null;
+    this.deckLearningState = null;
     
-    console.log('HotkeyDialogManager: Initializing dialog system...');
+    console.log('HotkeyDialogManager: Modern dialog system initialized');
   }
 
-  // ===== CREATE HOTKEY DIALOG =====
+  // ===== DECK-SPEZIFISCHES MIDI-LEARNING (HAUPTFEATURE) =====
 
-  showCreateHotkeyDialog(options = {}) {
-    const dialog = this.createDialog('create-hotkey', 'Hotkey erstellen', `
-      <form class="hotkey-form" id="hotkeyForm">
-        <div class="form-section">
-          <h4>Grundinformationen</h4>
-          <div class="form-group">
-            <label for="hotkeyName">Name:</label>
-            <input type="text" id="hotkeyName" name="name" placeholder="Mein Hotkey" required>
-          </div>
-          <div class="form-group">
-            <label for="hotkeyDescription">Beschreibung:</label>
-            <textarea id="hotkeyDescription" name="description" placeholder="Optionale Beschreibung"></textarea>
-          </div>
-          ${options.deckId ? `
-            <div class="form-group">
-              <label>Deck:</label>
-              <span class="deck-info">${this.hotkeyManager.getDeckById(options.deckId)?.name || 'Unbekannt'}</span>
-              ${options.position ? `<span class="position-info">Position: ${options.position.row + 1}, ${options.position.col + 1}</span>` : ''}
-            </div>
-          ` : `
-            <div class="form-group">
-              <label for="hotkeyDeck">Zu Deck hinzufügen:</label>
-              <select id="hotkeyDeck" name="deckId">
-                <option value="">Einzelner Hotkey</option>
-                ${this.hotkeyManager.getAllDecks().map(deck => 
-                  `<option value="${deck.id}">${deck.name} (${deck.rows}×${deck.columns})</option>`
-                ).join('')}
-              </select>
-            </div>
-          `}
+  showDeckLearningDialog(deck) {
+    console.log('Starting deck learning for:', deck.name);
+    
+    const dialog = this.createDialog('deck-learning', `🎹 Deck lernen: ${deck.name}`, `
+      <div class="deck-learning-content">
+        <div class="deck-info">
+          <h4>📋 Deck: ${deck.name}</h4>
+          <p><strong>Layout:</strong> ${deck.rows} × ${deck.columns} = ${deck.rows * deck.columns} Plätze</p>
+          ${deck.description ? `<p class="deck-description">${deck.description}</p>` : ''}
+          ${deck.isSubDeck ? `<p class="subdeck-notice">⚠️ <strong>Unterdeck:</strong> MIDI-Zuordnungen werden vom Hauptdeck übernommen</p>` : ''}
         </div>
 
-        <div class="form-section">
-          <h4>Trigger</h4>
-          <div class="trigger-section" id="triggerSection">
-            <div class="trigger-options">
-              <button type="button" class="trigger-btn" data-type="midi" title="MIDI-Controller lernen">🎹 MIDI</button>
-              <button type="button" class="trigger-btn" data-type="keyboard" title="Tastatur-Shortcut lernen">⌨️ Tastatur</button>
-              <button type="button" class="trigger-btn" data-type="click" title="Nur per Klick">🖱️ Klick</button>
-            </div>
-            <div class="learned-triggers" id="learnedTriggers"></div>
+        <div class="learning-instructions">
+          <h4>🎓 So funktioniert's:</h4>
+          <ol>
+            <li><strong>Klicke "Lernen starten"</strong> um das MIDI-Learning zu beginnen</li>
+            <li><strong>Drücke nacheinander</strong> die Buttons/Regler auf deinem MIDI-Controller</li>
+            <li><strong>Die Zuordnung gilt für alle Unterdecks</strong> - Position bleibt gleich, Aktionen können unterschiedlich sein</li>
+            <li><strong>"Position überspringen"</strong> wenn du einen Platz frei lassen möchtest</li>
+          </ol>
+        </div>
+
+        <div class="deck-preview-learning">
+          <div class="learning-grid" style="grid-template-columns: repeat(${deck.columns}, 1fr);">
+            ${this.renderDeckLearningGrid(deck)}
           </div>
         </div>
 
-        <div class="form-section">
-          <h4>Aktionen</h4>
-          <div class="actions-section" id="actionsSection">
-            <div class="actions-list" id="actionsList"></div>
-            <div class="add-action-section">
-              <select id="actionType">
-                <option value="">Aktion auswählen...</option>
-                <optgroup label="OBS Studio">
-                  <option value="obs_scene_switch">Szene wechseln</option>
-                  <option value="obs_source_visibility">Source Ein-/Ausblenden</option>
-                  <option value="obs_filter_toggle">Filter umschalten</option>
-                  <option value="obs_recording_toggle">Aufnahme umschalten</option>
-                  <option value="obs_streaming_toggle">Stream umschalten</option>
-                  <option value="obs_raw_request">Raw OBS Request</option>
-                </optgroup>
-                <optgroup label="Audio">
-                  <option value="audio_volume">Lautstärke setzen</option>
-                  <option value="audio_mute">Stumm schalten</option>
-                </optgroup>
-                <optgroup label="Deck-Steuerung">
-                  <option value="deck_switch">Deck wechseln</option>
-                  <option value="sub_deck_switch">Unter-Deck wechseln</option>
-                </optgroup>
-                <optgroup label="Hilfsmittel">
-                  <option value="delay">Verzögerung</option>
-                </optgroup>
-              </select>
-              <button type="button" id="addActionBtn" class="btn-secondary">+ Hinzufügen</button>
-            </div>
+        <div class="learning-controls">
+          <button type="button" class="btn-primary" id="startDeckLearning">🎓 Lernen starten</button>
+          <button type="button" class="btn-secondary" id="skipPosition" style="display: none;">⏭️ Position überspringen</button>
+          <button type="button" class="btn-danger" id="stopLearning" style="display: none;">⏹️ Lernen stoppen</button>
+          <button type="button" class="btn-secondary" id="resetDeckLearning">🔄 Zurücksetzen</button>
+        </div>
+
+        <div class="learning-progress" id="learningProgress" style="display: none;">
+          <div class="progress-info">
+            <span id="currentPosition">Position 1,1</span>
+            <span id="progressText">0 / ${deck.rows * deck.columns}</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
           </div>
         </div>
-      </form>
+
+        <div class="learning-status" id="learningStatus" style="display: none;">
+          <div class="status-content">
+            <div class="learning-animation">🎹</div>
+            <h4>Warte auf MIDI-Input...</h4>
+            <p class="learning-instruction">Drücke einen Button oder bewege einen Regler auf deinem MIDI-Controller</p>
+            <div class="position-indicator" id="positionIndicator">Position 1,1</div>
+          </div>
+        </div>
+      </div>
     `, {
-      primaryButton: { text: 'Erstellen', action: () => this.handleCreateHotkey(options) },
-      secondaryButton: { text: 'Abbrechen', action: () => this.closeDialog() }
+      secondaryButton: { text: 'Schließen', action: () => this.closeDialog() }
     });
 
-    this.setupCreateHotkeyEventListeners();
+    this.setupDeckLearningEvents(deck);
   }
 
-  setupCreateHotkeyEventListeners() {
-    // Trigger learning buttons
-    const triggerBtns = this.currentDialog.querySelectorAll('.trigger-btn');
-    triggerBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const type = btn.dataset.type;
-        this.startTriggerLearning(type);
-      });
-    });
+  renderDeckLearningGrid(deck) {
+    const totalSlots = deck.rows * deck.columns;
+    let html = '';
 
-    // Add action button
-    const addActionBtn = this.currentDialog.querySelector('#addActionBtn');
-    const actionType = this.currentDialog.querySelector('#actionType');
-    
-    addActionBtn?.addEventListener('click', async () => {
-      const type = actionType.value;
-      if (type) {
-        await this.addActionToForm(type);
-        actionType.value = '';
-      }
-    });
-  }
-
-  startTriggerLearning(type) {
-    this.learningState = { type, dialog: this.currentDialog };
-
-    const triggerSection = this.currentDialog.querySelector('#triggerSection');
-    triggerSection.innerHTML = `
-      <div class="learning-state">
-        <div class="learning-indicator">
-          <div class="learning-animation">${type === 'midi' ? '🎹' : '⌨️'}</div>
-          <h4>Learning ${type === 'midi' ? 'MIDI' : 'Keyboard'}</h4>
-          <p>${type === 'midi' ? 
-            'Bewege einen Regler oder drücke einen Button auf deinem MIDI-Controller' : 
-            'Drücke die gewünschte Tastenkombination'
-          }</p>
-          <button type="button" class="btn-secondary" onclick="window.hotkeyDialogManager.cancelTriggerLearning()">Abbrechen</button>
-        </div>
-      </div>
-    `;
-
-    if (type === 'midi') {
-      this.hotkeyManager.startLearningMode((trigger) => {
-        this.onTriggerLearned(trigger);
-      });
-    } else if (type === 'keyboard') {
-      this.startKeyboardLearning();
-    } else if (type === 'click') {
-      // For click, just add it directly
-      this.onTriggerLearned({ type: 'click', data: { description: 'Per Klick' } });
-    }
-  }
-
-  startKeyboardLearning() {
-    const handleKeyPress = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const trigger = {
-        type: 'keyboard',
-        data: {
-          key: event.key,
-          code: event.code,
-          ctrlKey: event.ctrlKey,
-          shiftKey: event.shiftKey,
-          altKey: event.altKey,
-          description: this.hotkeyManager.getKeyboardDescription(event)
-        }
-      };
-
-      document.removeEventListener('keydown', handleKeyPress);
-      this.onTriggerLearned(trigger);
-    };
-
-    document.addEventListener('keydown', handleKeyPress);
-  }
-
-  onTriggerLearned(trigger) {
-    if (!this.learningState || !this.learningState.dialog) return;
-
-    const triggerSection = this.learningState.dialog.querySelector('#triggerSection');
-    const learnedTriggersContainer = document.createElement('div');
-    learnedTriggersContainer.className = 'learned-triggers';
-    learnedTriggersContainer.id = 'learnedTriggers';
-
-    triggerSection.innerHTML = `
-      <div class="trigger-options">
-        <button type="button" class="trigger-btn" data-type="midi" title="MIDI-Controller lernen">🎹 MIDI</button>
-        <button type="button" class="trigger-btn" data-type="keyboard" title="Tastatur-Shortcut lernen">⌨️ Tastatur</button>
-        <button type="button" class="trigger-btn" data-type="click" title="Nur per Klick">🖱️ Klick</button>
-      </div>
-    `;
-    
-    triggerSection.appendChild(learnedTriggersContainer);
-
-    // Add learned trigger
-    this.addLearnedTrigger(trigger);
-
-    // Re-setup event listeners
-    this.setupCreateHotkeyEventListeners();
-
-    this.learningState = null;
-  }
-
-  addLearnedTrigger(trigger) {
-    const container = this.currentDialog.querySelector('#learnedTriggers');
-    if (!container) return;
-
-    const triggerDiv = document.createElement('div');
-    triggerDiv.className = 'learned-trigger';
-    triggerDiv.innerHTML = `
-      <span class="trigger-type-icon">${trigger.type === 'midi' ? '🎹' : trigger.type === 'keyboard' ? '⌨️' : '🖱️'}</span>
-      <span class="trigger-description">${trigger.data.description}</span>
-      <button type="button" class="remove-trigger-btn" onclick="this.parentElement.remove()">×</button>
-    `;
-    
-    triggerDiv.dataset.trigger = JSON.stringify(trigger);
-    container.appendChild(triggerDiv);
-  }
-
-  cancelTriggerLearning() {
-    this.hotkeyManager.stopLearningMode();
-    this.learningState = null;
-
-    // Reset trigger section
-    if (this.currentDialog) {
-      const triggerSection = this.currentDialog.querySelector('#triggerSection');
-      triggerSection.innerHTML = `
-        <div class="trigger-options">
-          <button type="button" class="trigger-btn" data-type="midi" title="MIDI-Controller lernen">🎹 MIDI</button>
-          <button type="button" class="trigger-btn" data-type="keyboard" title="Tastatur-Shortcut lernen">⌨️ Tastatur</button>
-          <button type="button" class="trigger-btn" data-type="click" title="Nur per Klick">🖱️ Klick</button>
-        </div>
-        <div class="learned-triggers" id="learnedTriggers"></div>
-      `;
-      this.setupCreateHotkeyEventListeners();
-    }
-  }
-
-  async addActionToForm(actionType) {
-    const actionsList = this.currentDialog.querySelector('#actionsList');
-    if (!actionsList) return;
-
-    const actionDiv = document.createElement('div');
-    actionDiv.className = 'action-form-item';
-    actionDiv.dataset.actionType = actionType;
-
-    let configHTML = '';
-    switch (actionType) {
-      case 'obs_scene_switch':
-        configHTML = await this.getSceneSwitchConfig();
-        break;
-      case 'obs_source_visibility':
-        configHTML = await this.getSourceVisibilityConfig();
-        break;
-      case 'obs_filter_toggle':
-        configHTML = await this.getFilterToggleConfig();
-        break;
-      case 'obs_recording_toggle':
-      case 'obs_streaming_toggle':
-        configHTML = '<p>Keine weitere Konfiguration erforderlich</p>';
-        break;
-      case 'obs_raw_request':
-        configHTML = this.getRawRequestConfig();
-        break;
-      case 'audio_volume':
-        configHTML = this.getAudioVolumeConfig();
-        break;
-      case 'audio_mute':
-        configHTML = this.getAudioMuteConfig();
-        break;
-      case 'deck_switch':
-        configHTML = this.getDeckSwitchConfig();
-        break;
-      case 'sub_deck_switch':
-        configHTML = this.getSubDeckSwitchConfig();
-        break;
-      case 'delay':
-        configHTML = this.getDelayConfig();
-        break;
-    }
-
-    actionDiv.innerHTML = `
-      <div class="action-header">
-        <span class="action-title">${this.getActionTitle(actionType)}</span>
-        <button type="button" class="remove-action-btn" onclick="this.parentElement.parentElement.remove()">×</button>
-      </div>
-      <div class="action-config">
-        ${configHTML}
-      </div>
-    `;
-
-    actionsList.appendChild(actionDiv);
-  }
-
-  getActionTitle(actionType) {
-    const titles = {
-      'obs_scene_switch': 'Szene wechseln',
-      'obs_source_visibility': 'Source Ein-/Ausblenden',
-      'obs_filter_toggle': 'Filter umschalten',
-      'obs_recording_toggle': 'Aufnahme umschalten',
-      'obs_streaming_toggle': 'Stream umschalten',
-      'obs_raw_request': 'Raw OBS Request',
-      'audio_volume': 'Lautstärke setzen',
-      'audio_mute': 'Stumm schalten',
-      'deck_switch': 'Deck wechseln',
-      'sub_deck_switch': 'Unter-Deck wechseln',
-      'delay': 'Verzögerung'
-    };
-    return titles[actionType] || actionType;
-  }
-
-  async getSceneSwitchConfig() {
-    let scenes = [];
-    let refreshButtonHtml = '';
-    
-    if (window.obsManager && window.obsManager.isConnected) {
-      try {
-        // Get fresh scenes from OBS
-        const obsScenes = await window.obsManager.getScenes();
-        scenes = Array.isArray(obsScenes) ? obsScenes : [];
-        refreshButtonHtml = '<button type="button" class="obs-refresh-btn" onclick="window.hotkeyDialogManager.refreshObsData(this, \'scenes\')">🔄 Aktualisieren</button>';
-      } catch (error) {
-        console.error('Error fetching scenes:', error);
-      }
-    }
-    
-    return `
-      <div class="config-group">
-        <label>Szene: ${refreshButtonHtml}</label>
-        <input list="sceneList" name="sceneName" placeholder="Szene eingeben oder auswählen" required autocomplete="off">
-        <datalist id="sceneList">
-          ${scenes.map(scene => {
-            const sceneName = scene.sceneName || scene.name || scene;
-            return `<option value="${sceneName}">${sceneName}</option>`;
-          }).join('')}
-        </datalist>
-        ${scenes.length === 0 ? '<small class="help-text">Keine Szenen gefunden. <button type="button" onclick="window.hotkeyDialogManager.refreshObsData(this, \'scenes\')">OBS-Daten laden</button></small>' : `<small class="help-text">${scenes.length} Szenen verfügbar</small>`}
-      </div>
-    `;
-  }
-
-  async getSourceVisibilityConfig() {
-    let scenes = [];
-    let sources = [];
-    let refreshButtonHtml = '';
-    
-    if (window.obsManager && window.obsManager.isConnected) {
-      try {
-        scenes = await window.obsManager.getScenes();
-        sources = await window.obsManager.getAllSources();
-        refreshButtonHtml = '<button type="button" class="obs-refresh-btn" onclick="window.hotkeyDialogManager.refreshObsData(this, \'sources\')">🔄</button>';
-      } catch (error) {
-        console.error('Error fetching sources:', error);
-      }
-    }
-    
-    return `
-      <div class="config-group">
-        <label>Szene: ${refreshButtonHtml}</label>
-        <input list="sceneListSource" name="sceneName" placeholder="Szene eingeben" required autocomplete="off" onchange="window.hotkeyDialogManager.loadSourcesForScene(this.value, this.parentElement.parentElement)">
-        <datalist id="sceneListSource">
-          ${scenes.map(scene => {
-            const sceneName = scene.sceneName || scene.name || scene;
-            return `<option value="${sceneName}">${sceneName}</option>`;
-          }).join('')}
-        </datalist>
-      </div>
-      <div class="config-group">
-        <label>Source:</label>
-        <input list="sourceList" name="sourceName" placeholder="Source eingeben" required autocomplete="off">
-        <datalist id="sourceList">
-          ${sources.map(source => {
-            const sourceName = source.inputName || source.sourceName || source.name || source;
-            return `<option value="${sourceName}">${sourceName}</option>`;
-          }).join('')}
-        </datalist>
-        <small class="help-text">Wähle zuerst eine Szene aus</small>
-      </div>
-      <div class="config-group">
-        <label>Aktion:</label>
-        <select name="visible" required>
-          <option value="toggle">Automatisch umschalten (Toggle)</option>
-          <option value="true">Immer einblenden</option>
-          <option value="false">Immer ausblenden</option>
-        </select>
-        <small class="help-text">Toggle prüft den aktuellen Status und schaltet entsprechend um</small>
-      </div>
-    `;
-  }
-
-  async getFilterToggleConfig() {
-    let sources = [];
-    let refreshButtonHtml = '';
-    
-    if (window.obsManager && window.obsManager.isConnected) {
-      try {
-        sources = await window.obsManager.getAllSources();
-        refreshButtonHtml = '<button type="button" class="obs-refresh-btn" onclick="window.hotkeyDialogManager.refreshObsData(this, \'sources\')">🔄</button>';
-      } catch (error) {
-        console.error('Error fetching sources:', error);
-      }
-    }
-    
-    return `
-      <div class="config-group">
-        <label>Source: ${refreshButtonHtml}</label>
-        <input list="sourceListFilter" name="sourceName" placeholder="Source eingeben" required autocomplete="off" onchange="window.hotkeyDialogManager.loadFiltersForSource(this.value, this.parentElement.parentElement)">
-        <datalist id="sourceListFilter">
-          ${sources.map(source => {
-            const sourceName = source.inputName || source.sourceName || source.name || source;
-            return `<option value="${sourceName}">${sourceName}</option>`;
-          }).join('')}
-        </datalist>
-      </div>
-      <div class="config-group">
-        <label>Filter:</label>
-        <input list="filterList" name="filterName" placeholder="Filter eingeben" required autocomplete="off">
-        <datalist id="filterList">
-          <!-- Filters will be loaded dynamically -->
-        </datalist>
-        <small class="help-text">Wähle zuerst eine Source aus</small>
-      </div>
-      <div class="config-group">
-        <label>Aktion:</label>
-        <select name="enabled" required>
-          <option value="true">Aktivieren</option>
-          <option value="false">Deaktivieren</option>
-        </select>
-      </div>
-    `;
-  }
-
-  getRawRequestConfig() {
-    return `
-      <div class="config-group">
-        <label>Request Type:</label>
-        <input type="text" name="requestType" placeholder="z.B. SetSceneItemEnabled" required>
-      </div>
-      <div class="config-group">
-        <label>Request Data (JSON):</label>
-        <textarea name="requestData" placeholder='{"sceneName": "Scene", "sceneItemId": 1, "sceneItemEnabled": true}' required></textarea>
-      </div>
-    `;
-  }
-
-  getAudioVolumeConfig() {
-    const audioSources = window.audioManager?.getAllAudioSources() || [];
-    return `
-      <div class="config-group">
-        <label>Audio Source:</label>
-        <select name="sourceName" required>
-          <option value="">Audio-Quelle auswählen...</option>
-          ${audioSources.map(source => `<option value="${source.name}">${source.name}</option>`).join('')}
-        </select>
-      </div>
-      <div class="config-group">
-        <label>Lautstärke (0-100%):</label>
-        <input type="number" name="volume" min="0" max="100" value="50" required>
-      </div>
-    `;
-  }
-
-  getAudioMuteConfig() {
-    const audioSources = window.audioManager?.getAllAudioSources() || [];
-    return `
-      <div class="config-group">
-        <label>Audio Source:</label>
-        <select name="sourceName" required>
-          <option value="">Audio-Quelle auswählen...</option>
-          ${audioSources.map(source => `<option value="${source.name}">${source.name}</option>`).join('')}
-        </select>
-      </div>
-      <div class="config-group">
-        <label>Aktion:</label>
-        <select name="muted" required>
-          <option value="true">Stumm schalten</option>
-          <option value="false">Laut schalten</option>
-        </select>
-      </div>
-    `;
-  }
-
-  getDeckSwitchConfig() {
-    const decks = this.hotkeyManager.getAllDecks();
-    return `
-      <div class="config-group">
-        <label>Ziel-Deck:</label>
-        <select name="deckId" required>
-          <option value="">Deck auswählen...</option>
-          ${decks.map(deck => `<option value="${deck.id}">${deck.name}</option>`).join('')}
-        </select>
-      </div>
-    `;
-  }
-
-  getSubDeckSwitchConfig() {
-    const mainDecks = this.hotkeyManager.getMainDecks();
-    return `
-      <div class="config-group">
-        <label>Haupt-Deck:</label>
-        <select name="mainDeckId" required onchange="window.hotkeyDialogManager.updateSubDeckOptions(this.value, this.parentElement.parentElement)">
-          <option value="">Haupt-Deck auswählen...</option>
-          ${mainDecks.map(deck => `<option value="${deck.id}">${deck.name}</option>`).join('')}
-        </select>
-      </div>
-      <div class="config-group">
-        <label>Aktion:</label>
-        <select name="actionType" required onchange="window.hotkeyDialogManager.toggleSubDeckOptions(this.value, this.parentElement.parentElement)">
-          <option value="">Aktion auswählen...</option>
-          <option value="switch_to_subdeck">Zu Unter-Deck wechseln</option>
-          <option value="back_to_main">Zurück zu Haupt-Deck</option>
-        </select>
-      </div>
-      <div class="config-group subdeck-selection" style="display: none;">
-        <label>Unter-Deck:</label>
-        <select name="subDeckId">
-          <option value="">Unter-Deck auswählen...</option>
-        </select>
-      </div>
-    `;
-  }
-
-  getDelayConfig() {
-    return `
-      <div class="config-group">
-        <label>Verzögerung (Millisekunden):</label>
-        <input type="number" name="duration" min="0" max="10000" value="1000" required>
-      </div>
-    `;
-  }
-
-  handleCreateHotkey(options = {}) {
-    const form = this.currentDialog.querySelector('#hotkeyForm');
-    const formData = new FormData(form);
-
-    // Get basic hotkey data
-    const hotkeyData = {
-      name: formData.get('name'),
-      description: formData.get('description'),
-      deckId: options.deckId || formData.get('deckId') || null,
-      position: options.position || null
-    };
-
-    // Create hotkey
-    const hotkey = this.hotkeyManager.createHotkey(hotkeyData);
-
-    // Add triggers
-    const learnedTriggers = this.currentDialog.querySelectorAll('.learned-trigger');
-    learnedTriggers.forEach(triggerEl => {
-      const trigger = JSON.parse(triggerEl.dataset.trigger);
-      this.hotkeyManager.addTriggerToHotkey(hotkey.id, trigger);
-    });
-
-    // Add actions
-    const actionItems = this.currentDialog.querySelectorAll('.action-form-item');
-    actionItems.forEach(actionEl => {
-      const actionType = actionEl.dataset.actionType;
-      const actionConfig = this.extractActionConfig(actionEl, actionType);
+    for (let i = 0; i < totalSlots; i++) {
+      const row = Math.floor(i / deck.columns);
+      const col = i % deck.columns;
       
-      if (actionConfig) {
-        this.hotkeyManager.addActionToHotkey(hotkey.id, {
-          type: actionType,
-          data: actionConfig
-        });
-      }
-    });
-
-    this.closeDialog();
-    this.uiManager.showSuccessMessage(`Hotkey "${hotkey.name}" erstellt!`);
-  }
-
-  extractActionConfig(actionEl, actionType) {
-    const inputs = actionEl.querySelectorAll('input, select, textarea');
-    const config = {};
-
-    inputs.forEach(input => {
-      const name = input.name;
-      let value = input.value;
-
-      // Skip empty values (except for required special cases)
-      if (!name || value === '') {
-        // For sub_deck_switch, allow empty subDeckId if switching back to main
-        if (!(actionType === 'sub_deck_switch' && name === 'subDeckId')) {
-          return;
-        }
-      }
-
-      // Type conversion
-      if (input.type === 'number') {
-        value = parseFloat(value);
-        if (name === 'volume') value = value / 100; // Convert percentage to 0-1
-      } else if (value === 'true') {
-        value = true;
-      } else if (value === 'false') {
-        value = false;
-      } else if (name === 'requestData') {
-        // Only try to parse JSON if there's actually content
-        if (value.trim()) {
-          try {
-            value = JSON.parse(value);
-          } catch (e) {
-            console.error('Invalid JSON in request data:', value);
-            return; // Skip this field if JSON is invalid
-          }
-        } else {
-          value = {}; // Default empty object for raw requests
-        }
-      }
-
-      config[name] = value;
-    });
-
-    // Special handling for sub_deck_switch
-    if (actionType === 'sub_deck_switch') {
-      return this.processSubDeckSwitchConfig(config);
+      // Check if there's already a hotkey at this position
+      const existingHotkey = this.hotkeyManager.getHotkeysByDeck(deck.id)
+        .find(h => h.position && h.position.row === row && h.position.col === col);
+      
+      const statusClass = existingHotkey ? 'learned' : 'empty';
+      const statusIcon = existingHotkey ? '✅' : '⏳';
+      
+      html += `
+        <div class="learning-slot ${statusClass}" data-position="${row},${col}" data-index="${i}">
+          <span class="slot-position">${row + 1},${col + 1}</span>
+          <div class="slot-status">${statusIcon}</div>
+          ${existingHotkey ? `<div class="slot-trigger">${this.getHotkeyTriggerText(existingHotkey)}</div>` : ''}
+        </div>
+      `;
     }
 
-    return Object.keys(config).length > 0 ? config : null;
+    return html;
   }
 
-  processSubDeckSwitchConfig(config) {
-    const { mainDeckId, actionType, subDeckId } = config;
+  getHotkeyTriggerText(hotkey) {
+    if (hotkey.triggers.length === 0) return 'Kein Trigger';
+    const trigger = hotkey.triggers[0];
+    if (trigger.type === 'midi') {
+      return trigger.data.description || 'MIDI';
+    }
+    return trigger.data.description || trigger.type;
+  }
+
+  setupDeckLearningEvents(deck) {
+    const startBtn = this.currentDialog.querySelector('#startDeckLearning');
+    const skipBtn = this.currentDialog.querySelector('#skipPosition');
+    const stopBtn = this.currentDialog.querySelector('#stopLearning');
+    const resetBtn = this.currentDialog.querySelector('#resetDeckLearning');
+
+    startBtn.addEventListener('click', () => this.startDeckLearning(deck));
+    skipBtn.addEventListener('click', () => this.skipCurrentPosition());
+    stopBtn.addEventListener('click', () => this.stopDeckLearning());
+    resetBtn.addEventListener('click', () => this.resetDeckLearning(deck));
+  }
+
+  startDeckLearning(deck) {
+    if (deck.isSubDeck) {
+      this.uiManager.showErrorMessage('Unterdeck-Learning nicht möglich', 'MIDI-Zuordnungen können nur für Hauptdecks gelernt werden. Das Unterdeck übernimmt automatisch die Zuordnungen des Hauptdecks.');
+      return;
+    }
+
+    console.log('Starting deck learning for:', deck.name);
+
+    // Find first empty position
+    const totalSlots = deck.rows * deck.columns;
+    let startIndex = 0;
     
-    if (!mainDeckId || !actionType) {
-      console.error('Missing mainDeckId or actionType for sub_deck_switch');
-      return null;
-    }
-
-    const result = { mainDeckId };
-
-    if (actionType === 'switch_to_subdeck') {
-      if (!subDeckId) {
-        console.error('Missing subDeckId for switch_to_subdeck action');
-        return null;
+    for (let i = 0; i < totalSlots; i++) {
+      const row = Math.floor(i / deck.columns);
+      const col = i % deck.columns;
+      const existingHotkey = this.hotkeyManager.getHotkeysByDeck(deck.id)
+        .find(h => h.position && h.position.row === row && h.position.col === col);
+      
+      if (!existingHotkey) {
+        startIndex = i;
+        break;
       }
-      result.subDeckId = subDeckId;
     }
-    // For 'back_to_main', we don't need subDeckId
 
-    return result;
+    this.deckLearningState = {
+      deck: deck,
+      currentIndex: startIndex,
+      totalSlots: totalSlots,
+      learnedCount: 0
+    };
+
+    // Update UI
+    const startBtn = this.currentDialog.querySelector('#startDeckLearning');
+    const skipBtn = this.currentDialog.querySelector('#skipPosition');
+    const stopBtn = this.currentDialog.querySelector('#stopLearning');
+    const progress = this.currentDialog.querySelector('#learningProgress');
+    const status = this.currentDialog.querySelector('#learningStatus');
+
+    startBtn.style.display = 'none';
+    skipBtn.style.display = 'inline-block';
+    stopBtn.style.display = 'inline-block';
+    progress.style.display = 'block';
+    status.style.display = 'block';
+
+    this.advanceDeckLearning();
   }
 
-  // ===== CREATE DECK DIALOG =====
+  advanceDeckLearning() {
+    if (!this.deckLearningState) return;
+
+    const { deck, currentIndex, totalSlots } = this.deckLearningState;
+
+    if (currentIndex >= totalSlots) {
+      this.completeDeckLearning();
+      return;
+    }
+
+    const row = Math.floor(currentIndex / deck.columns);
+    const col = currentIndex % deck.columns;
+
+    console.log(`Learning position ${row + 1},${col + 1} (index: ${currentIndex})`);
+
+    // Update UI
+    this.updateDeckLearningProgress(row, col);
+    this.highlightCurrentSlot(currentIndex);
+
+    // Start MIDI learning for this position
+    this.hotkeyManager.startLearningMode((trigger) => {
+      this.onDeckPositionLearned(trigger, row, col);
+    });
+  }
+
+  updateDeckLearningProgress(row, col) {
+    const currentPosition = this.currentDialog.querySelector('#currentPosition');
+    const positionIndicator = this.currentDialog.querySelector('#positionIndicator');
+    const progressText = this.currentDialog.querySelector('#progressText');
+    const progressFill = this.currentDialog.querySelector('#progressFill');
+
+    const { currentIndex, totalSlots, learnedCount } = this.deckLearningState;
+    const percentage = (learnedCount / totalSlots) * 100;
+
+    if (currentPosition) currentPosition.textContent = `Position ${row + 1}, ${col + 1}`;
+    if (positionIndicator) positionIndicator.textContent = `Position ${row + 1}, ${col + 1}`;
+    if (progressText) progressText.textContent = `${learnedCount} / ${totalSlots}`;
+    if (progressFill) progressFill.style.width = `${percentage}%`;
+  }
+
+  highlightCurrentSlot(index) {
+    // Remove previous highlights
+    const slots = this.currentDialog.querySelectorAll('.learning-slot');
+    slots.forEach(slot => slot.classList.remove('current'));
+
+    // Highlight current slot
+    const currentSlot = this.currentDialog.querySelector(`[data-index="${index}"]`);
+    if (currentSlot) {
+      currentSlot.classList.add('current');
+    }
+  }
+
+  onDeckPositionLearned(trigger, row, col) {
+    if (!this.deckLearningState) return;
+
+    const { deck } = this.deckLearningState;
+
+    console.log(`MIDI learned for position ${row + 1},${col + 1}:`, trigger);
+
+    // Create position-based hotkey without actions
+    const hotkey = this.hotkeyManager.createHotkey({
+      name: `${deck.name} ${row + 1},${col + 1}`,
+      description: `Position ${row + 1},${col + 1} in ${deck.name}`,
+      deckId: deck.id,
+      position: { row, col }
+    });
+
+    // Add MIDI trigger
+    this.hotkeyManager.addTriggerToHotkey(hotkey.id, trigger);
+
+    // Update slot status
+    const currentSlot = this.currentDialog.querySelector(`[data-index="${this.deckLearningState.currentIndex}"]`);
+    if (currentSlot) {
+      currentSlot.querySelector('.slot-status').textContent = '✅';
+      currentSlot.classList.remove('current', 'empty');
+      currentSlot.classList.add('learned');
+      
+      // Add trigger info
+      const triggerDiv = document.createElement('div');
+      triggerDiv.className = 'slot-trigger';
+      triggerDiv.textContent = trigger.data.description;
+      currentSlot.appendChild(triggerDiv);
+    }
+
+    this.deckLearningState.learnedCount++;
+    
+    // Find next empty position
+    this.findNextEmptyPosition();
+
+    // Continue with next position
+    setTimeout(() => {
+      this.advanceDeckLearning();
+    }, 500);
+  }
+
+  findNextEmptyPosition() {
+    const { deck, currentIndex, totalSlots } = this.deckLearningState;
+    
+    for (let i = currentIndex + 1; i < totalSlots; i++) {
+      const row = Math.floor(i / deck.columns);
+      const col = i % deck.columns;
+      const existingHotkey = this.hotkeyManager.getHotkeysByDeck(deck.id)
+        .find(h => h.position && h.position.row === row && h.position.col === col);
+      
+      if (!existingHotkey) {
+        this.deckLearningState.currentIndex = i;
+        return;
+      }
+    }
+    
+    // No more empty positions
+    this.deckLearningState.currentIndex = totalSlots;
+  }
+
+  skipCurrentPosition() {
+    if (!this.deckLearningState) return;
+
+    console.log('Skipping position:', this.deckLearningState.currentIndex);
+
+    this.hotkeyManager.stopLearningMode();
+
+    // Update slot status
+    const currentSlot = this.currentDialog.querySelector(`[data-index="${this.deckLearningState.currentIndex}"]`);
+    if (currentSlot) {
+      currentSlot.querySelector('.slot-status').textContent = '⏭️';
+      currentSlot.classList.remove('current');
+      currentSlot.classList.add('skipped');
+    }
+
+    this.findNextEmptyPosition();
+    this.advanceDeckLearning();
+  }
+
+  stopDeckLearning() {
+    console.log('Stopping deck learning');
+    
+    this.hotkeyManager.stopLearningMode();
+
+    if (this.deckLearningState) {
+      const { learnedCount } = this.deckLearningState;
+      this.uiManager.showSuccessMessage(`Deck-Learning gestoppt. ${learnedCount} Positionen gelernt.`);
+    }
+
+    this.resetLearningUI();
+    this.deckLearningState = null;
+  }
+
+  completeDeckLearning() {
+    const { learnedCount, totalSlots } = this.deckLearningState;
+
+    console.log(`Deck learning completed: ${learnedCount}/${totalSlots} positions learned`);
+
+    this.resetLearningUI();
+    this.deckLearningState = null;
+    
+    this.uiManager.showSuccessMessage(`🎉 Deck-Learning abgeschlossen! ${learnedCount} von ${totalSlots} Positionen gelernt.`);
+  }
+
+  resetLearningUI() {
+    const startBtn = this.currentDialog.querySelector('#startDeckLearning');
+    const skipBtn = this.currentDialog.querySelector('#skipPosition');
+    const stopBtn = this.currentDialog.querySelector('#stopLearning');
+    const progress = this.currentDialog.querySelector('#learningProgress');
+    const status = this.currentDialog.querySelector('#learningStatus');
+
+    if (startBtn) {
+      startBtn.style.display = 'inline-block';
+      startBtn.textContent = '🎓 Lernen starten';
+      startBtn.disabled = false;
+    }
+    if (skipBtn) skipBtn.style.display = 'none';
+    if (stopBtn) stopBtn.style.display = 'none';
+    if (progress) progress.style.display = 'none';
+    if (status) status.style.display = 'none';
+  }
+
+  resetDeckLearning(deck) {
+    if (this.deckLearningState) {
+      this.hotkeyManager.stopLearningMode();
+    }
+
+    if (confirm(`Alle MIDI-Zuordnungen für "${deck.name}" wirklich löschen?`)) {
+      // Delete all deck hotkeys
+      const deckHotkeys = this.hotkeyManager.getHotkeysByDeck(deck.id);
+      deckHotkeys.forEach(hotkey => {
+        this.hotkeyManager.deleteHotkey(hotkey.id);
+      });
+
+      // Reset UI
+      const grid = this.currentDialog.querySelector('.learning-grid');
+      if (grid) {
+        grid.innerHTML = this.renderDeckLearningGrid(deck);
+      }
+
+      this.resetLearningUI();
+      this.deckLearningState = null;
+      
+      this.uiManager.showSuccessMessage(`Deck "${deck.name}" zurückgesetzt`);
+    }
+  }
+
+  // ===== DECK CREATION/EDITING =====
 
   showCreateDeckDialog() {
-    const dialog = this.createDialog('create-deck', 'Deck erstellen', `
+    const dialog = this.createDialog('create-deck', '🎛️ Deck erstellen', `
       <form class="deck-form" id="deckForm">
         <div class="form-section">
-          <h4>Grundinformationen</h4>
+          <h4>📋 Grundinformationen</h4>
           <div class="form-group">
             <label for="deckName">Name:</label>
             <input type="text" id="deckName" name="name" placeholder="Mein Deck" required>
           </div>
           <div class="form-group">
             <label for="deckDescription">Beschreibung:</label>
-            <textarea id="deckDescription" name="description" placeholder="Optionale Beschreibung"></textarea>
+            <textarea id="deckDescription" name="description" placeholder="Optionale Beschreibung" rows="2"></textarea>
           </div>
         </div>
 
         <div class="form-section">
-          <h4>Layout</h4>
+          <h4>📐 Layout</h4>
           <div class="form-row">
             <div class="form-group">
               <label for="deckRows">Reihen:</label>
@@ -668,21 +398,20 @@ class HotkeyDialogManager {
               <input type="number" id="deckColumns" name="columns" min="1" max="8" value="4" required>
             </div>
           </div>
-          <div class="deck-preview" id="deckPreview">
-            <!-- Preview will be generated here -->
-          </div>
+          <div class="deck-preview" id="deckPreview"></div>
         </div>
 
         <div class="form-section">
-          <h4>Deck-Typ</h4>
+          <h4>🏗️ Deck-Typ</h4>
           <div class="form-group">
             <label for="deckParent">Übergeordnetes Deck:</label>
             <select id="deckParent" name="parentDeckId">
-              <option value="">Haupt-Deck</option>
+              <option value="">🎛️ Haupt-Deck (MIDI-lernfähig)</option>
               ${this.hotkeyManager.getMainDecks().map(deck => 
-                `<option value="${deck.id}">${deck.name} (Unter-Deck)</option>`
+                `<option value="${deck.id}">📁 ${deck.name} (Unter-Deck)</option>`
               ).join('')}
             </select>
+            <small class="help-text">Hauptdecks können MIDI lernen, Unterdecks übernehmen die MIDI-Zuordnungen</small>
           </div>
         </div>
       </form>
@@ -694,6 +423,61 @@ class HotkeyDialogManager {
     this.setupDeckPreview();
   }
 
+  showDeckEditDialog(deck) {
+    const dialog = this.createDialog('edit-deck', `✏️ Deck bearbeiten: ${deck.name}`, `
+      <form class="deck-form" id="editDeckForm">
+        <div class="form-section">
+          <h4>📋 Grundinformationen</h4>
+          <div class="form-group">
+            <label for="editDeckName">Name:</label>
+            <input type="text" id="editDeckName" name="name" value="${deck.name}" required>
+          </div>
+          <div class="form-group">
+            <label for="editDeckDescription">Beschreibung:</label>
+            <textarea id="editDeckDescription" name="description" rows="2">${deck.description || ''}</textarea>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h4>📐 Layout</h4>
+          ${deck.isSubDeck ? 
+            `<p class="warning-text">⚠️ Größe wird automatisch vom Hauptdeck übernommen</p>` :
+            `<div class="form-row">
+              <div class="form-group">
+                <label for="editDeckRows">Reihen:</label>
+                <input type="number" id="editDeckRows" name="rows" min="1" max="8" value="${deck.rows}" required>
+              </div>
+              <div class="form-group">
+                <label for="editDeckColumns">Spalten:</label>
+                <input type="number" id="editDeckColumns" name="columns" min="1" max="8" value="${deck.columns}" required>
+              </div>
+            </div>`
+          }
+          <div class="deck-preview" id="editDeckPreview"></div>
+        </div>
+
+        <div class="form-section">
+          <h4>📊 Statistiken</h4>
+          <div class="deck-stats">
+            <div class="stat-item">
+              <span class="stat-number">${this.hotkeyManager.getHotkeysByDeck(deck.id).length}</span>
+              <span class="stat-label">Hotkeys</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-number">${deck.isSubDeck ? 0 : this.hotkeyManager.getSubDecks(deck.id).length}</span>
+              <span class="stat-label">Unterdecks</span>
+            </div>
+          </div>
+        </div>
+      </form>
+    `, {
+      primaryButton: { text: 'Speichern', action: () => this.handleEditDeck(deck.id) },
+      secondaryButton: { text: 'Abbrechen', action: () => this.closeDialog() }
+    });
+
+    this.setupEditDeckPreview(deck);
+  }
+
   setupDeckPreview() {
     const rowsInput = this.currentDialog.querySelector('#deckRows');
     const columnsInput = this.currentDialog.querySelector('#deckColumns');
@@ -702,24 +486,48 @@ class HotkeyDialogManager {
     const updatePreview = () => {
       const rows = parseInt(rowsInput.value) || 4;
       const columns = parseInt(columnsInput.value) || 4;
-      
-      preview.innerHTML = `
-        <div class="preview-grid" style="grid-template-columns: repeat(${columns}, 1fr); grid-template-rows: repeat(${rows}, 1fr);">
-          ${Array(rows * columns).fill(0).map((_, i) => `
-            <div class="preview-slot">
-              <span class="slot-number">${i + 1}</span>
-            </div>
-          `).join('')}
-        </div>
-        <div class="preview-info">
-          ${rows} × ${columns} = ${rows * columns} Hotkey-Plätze
-        </div>
-      `;
+      this.renderDeckPreview(preview, rows, columns);
     };
 
     rowsInput.addEventListener('input', updatePreview);
     columnsInput.addEventListener('input', updatePreview);
     updatePreview();
+  }
+
+  setupEditDeckPreview(deck) {
+    const preview = this.currentDialog.querySelector('#editDeckPreview');
+    
+    if (deck.isSubDeck) {
+      this.renderDeckPreview(preview, deck.rows, deck.columns);
+    } else {
+      const rowsInput = this.currentDialog.querySelector('#editDeckRows');
+      const columnsInput = this.currentDialog.querySelector('#editDeckColumns');
+
+      const updatePreview = () => {
+        const rows = parseInt(rowsInput.value) || deck.rows;
+        const columns = parseInt(columnsInput.value) || deck.columns;
+        this.renderDeckPreview(preview, rows, columns);
+      };
+
+      rowsInput.addEventListener('input', updatePreview);
+      columnsInput.addEventListener('input', updatePreview);
+      updatePreview();
+    }
+  }
+
+  renderDeckPreview(preview, rows, columns) {
+    preview.innerHTML = `
+      <div class="preview-grid" style="grid-template-columns: repeat(${columns}, 1fr); grid-template-rows: repeat(${rows}, 1fr);">
+        ${Array(rows * columns).fill(0).map((_, i) => `
+          <div class="preview-slot">
+            <span class="slot-number">${i + 1}</span>
+          </div>
+        `).join('')}
+      </div>
+      <div class="preview-info">
+        ${rows} × ${columns} = ${rows * columns} Hotkey-Plätze
+      </div>
+    `;
   }
 
   handleCreateDeck() {
@@ -740,353 +548,21 @@ class HotkeyDialogManager {
     this.uiManager.showSuccessMessage(`Deck "${deck.name}" erstellt!`);
   }
 
-  // ===== QUICK LEARNING DIALOG =====
-
-  startQuickLearning() {
-    const dialog = this.createDialog('quick-learning', 'Schnelles Hotkey-Lernen', `
-      <div class="quick-learning-content">
-        <div class="learning-steps">
-          <h4>Anleitung:</h4>
-          <ol>
-            <li>Wähle eine Aktion aus der Liste</li>
-            <li>Drücke den entsprechenden Button/Regler auf deinem MIDI-Controller</li>
-            <li>Der Hotkey wird automatisch erstellt und zugeordnet</li>
-          </ol>
-        </div>
-
-        <div class="quick-actions">
-          <h4>Verfügbare Aktionen:</h4>
-          <div class="quick-action-grid">
-            ${this.getQuickActionButtons()}
-          </div>
-        </div>
-
-        <div class="learning-status" id="learningStatus" style="display: none;">
-          <div class="status-content">
-            <div class="learning-animation">🎹</div>
-            <h4>Warte auf MIDI-Input...</h4>
-            <p class="learning-action" id="learningAction"></p>
-            <button type="button" class="btn-secondary" onclick="window.hotkeyDialogManager.cancelQuickLearning()">Abbrechen</button>
-          </div>
-        </div>
-      </div>
-    `, {
-      secondaryButton: { text: 'Schließen', action: () => this.closeDialog() }
-    });
-
-    this.setupQuickLearningEvents();
-  }
-
-  getQuickActionButtons() {
-    const quickActions = [
-      { type: 'obs_recording_toggle', title: 'Aufnahme umschalten', icon: '🔴' },
-      { type: 'obs_streaming_toggle', title: 'Stream umschalten', icon: '📺' },
-    ];
-
-    // Add scene switch actions
-    const scenes = window.obsManager?.getScenes() || [];
-    scenes.slice(0, 6).forEach(scene => {
-      quickActions.push({
-        type: 'obs_scene_switch',
-        title: `Szene: ${scene.sceneName}`,
-        icon: '🎬',
-        data: { sceneName: scene.sceneName }
-      });
-    });
-
-    // Add audio mute actions
-    const audioSources = window.audioManager?.getAllAudioSources() || [];
-    audioSources.slice(0, 4).forEach(source => {
-      quickActions.push({
-        type: 'audio_mute',
-        title: `Mute: ${source.name}`,
-        icon: '🔇',
-        data: { sourceName: source.name, muted: true }
-      });
-    });
-
-    return quickActions.map(action => `
-      <button class="quick-action-btn" data-action='${JSON.stringify(action)}'>
-        <span class="action-icon">${action.icon}</span>
-        <span class="action-title">${action.title}</span>
-      </button>
-    `).join('');
-  }
-
-  setupQuickLearningEvents() {
-    const actionBtns = this.currentDialog.querySelectorAll('.quick-action-btn');
-    actionBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const action = JSON.parse(btn.dataset.action);
-        this.startQuickActionLearning(action);
-      });
-    });
-  }
-
-  startQuickActionLearning(action) {
-    this.learningState = { action, dialog: this.currentDialog };
-
-    // Show learning status
-    const actionsGrid = this.currentDialog.querySelector('.quick-action-grid');
-    const learningStatus = this.currentDialog.querySelector('#learningStatus');
-    const learningAction = this.currentDialog.querySelector('#learningAction');
-
-    actionsGrid.style.display = 'none';
-    learningStatus.style.display = 'block';
-    learningAction.textContent = action.title;
-
-    // Start learning
-    this.hotkeyManager.startLearningMode((trigger) => {
-      this.onQuickActionLearned(trigger, action);
-    });
-  }
-
-  onQuickActionLearned(trigger, action) {
-    // Create hotkey
-    const hotkey = this.hotkeyManager.createHotkey({
-      name: action.title,
-      description: `Schnell erstellter Hotkey für ${action.title}`
-    });
-
-    // Add trigger
-    this.hotkeyManager.addTriggerToHotkey(hotkey.id, trigger);
-
-    // Add action
-    this.hotkeyManager.addActionToHotkey(hotkey.id, {
-      type: action.type,
-      data: action.data || {}
-    });
-
-    this.uiManager.showSuccessMessage(`Hotkey "${action.title}" erstellt!`);
-    this.cancelQuickLearning();
-  }
-
-  cancelQuickLearning() {
-    this.hotkeyManager.stopLearningMode();
-    this.learningState = null;
-
-    if (this.currentDialog) {
-      const actionsGrid = this.currentDialog.querySelector('.quick-action-grid');
-      const learningStatus = this.currentDialog.querySelector('#learningStatus');
-
-      actionsGrid.style.display = 'grid';
-      learningStatus.style.display = 'none';
-    }
-  }
-
-  // ===== IMPORT/EXPORT DIALOG =====
-
-  showImportExportDialog() {
-    const stats = this.hotkeyManager.getStats();
-    
-    const dialog = this.createDialog('import-export', 'Import / Export', `
-      <div class="import-export-content">
-        <div class="current-config">
-          <h4>Aktuelle Konfiguration:</h4>
-          <div class="config-stats">
-            <div class="stat-item">
-              <span class="stat-number">${stats.totalHotkeys}</span>
-              <span class="stat-label">Hotkeys</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-number">${stats.totalDecks}</span>
-              <span class="stat-label">Decks</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-number">${stats.totalExecutions}</span>
-              <span class="stat-label">Ausführungen</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="export-section">
-          <h4>Export:</h4>
-          <p>Exportiere deine aktuelle Hotkey-Konfiguration als JSON-Datei</p>
-          <button type="button" class="btn-primary" id="exportBtn">📤 Konfiguration exportieren</button>
-        </div>
-
-        <div class="import-section">
-          <h4>Import:</h4>
-          <p>Importiere eine zuvor exportierte Konfiguration</p>
-          <div class="import-options">
-            <label class="import-option">
-              <input type="radio" name="importMode" value="replace" checked>
-              <span>Aktuelle Konfiguration ersetzen</span>
-            </label>
-            <label class="import-option">
-              <input type="radio" name="importMode" value="merge">
-              <span>Mit aktueller Konfiguration zusammenführen</span>
-            </label>
-          </div>
-          <div class="file-input-section">
-            <input type="file" id="importFile" accept=".json" style="display: none;">
-            <button type="button" class="btn-secondary" id="importBtn">📥 Datei auswählen</button>
-            <span id="fileName" class="file-name"></span>
-          </div>
-        </div>
-      </div>
-    `, {
-      secondaryButton: { text: 'Schließen', action: () => this.closeDialog() }
-    });
-
-    this.setupImportExportEvents();
-  }
-
-  setupImportExportEvents() {
-    const exportBtn = this.currentDialog.querySelector('#exportBtn');
-    const importBtn = this.currentDialog.querySelector('#importBtn');
-    const importFile = this.currentDialog.querySelector('#importFile');
-    const fileName = this.currentDialog.querySelector('#fileName');
-
-    exportBtn.addEventListener('click', () => {
-      this.exportConfiguration();
-    });
-
-    importBtn.addEventListener('click', () => {
-      importFile.click();
-    });
-
-    importFile.addEventListener('change', (event) => {
-      const file = event.target.files[0];
-      if (file) {
-        fileName.textContent = file.name;
-        this.importConfiguration(file);
-      }
-    });
-  }
-
-  exportConfiguration() {
-    const config = this.hotkeyManager.exportConfiguration();
-    const dataStr = JSON.stringify(config, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `obs-midi-mixer-hotkeys-${new Date().toISOString().split('T')[0]}.json`;
-    link.click();
-
-    URL.revokeObjectURL(url);
-    this.uiManager.showSuccessMessage('Konfiguration exportiert!');
-  }
-
-  async importConfiguration(file) {
-    try {
-      const text = await file.text();
-      const config = JSON.parse(text);
-
-      const importMode = this.currentDialog.querySelector('input[name="importMode"]:checked').value;
-      
-      if (importMode === 'replace') {
-        if (!confirm('Aktuelle Konfiguration wirklich ersetzen? Alle bestehenden Hotkeys und Decks gehen verloren.')) {
-          return;
-        }
-      }
-
-      this.hotkeyManager.importConfiguration(config);
-      this.closeDialog();
-      this.uiManager.showSuccessMessage(`Konfiguration ${importMode === 'replace' ? 'ersetzt' : 'zusammengeführt'}!`);
-
-    } catch (error) {
-      console.error('Import error:', error);
-      this.uiManager.showErrorMessage('Import-Fehler', 'Die Datei konnte nicht importiert werden. Bitte überprüfe das Format.');
-    }
-  }
-
-  // ===== DECK EDIT DIALOG =====
-
-  showDeckEditDialog(deck) {
-    const dialog = this.createDialog('edit-deck', `Deck bearbeiten: ${deck.name}`, `
-      <form class="deck-form" id="editDeckForm">
-        <div class="form-section">
-          <h4>Grundinformationen</h4>
-          <div class="form-group">
-            <label for="editDeckName">Name:</label>
-            <input type="text" id="editDeckName" name="name" value="${deck.name}" required>
-          </div>
-          <div class="form-group">
-            <label for="editDeckDescription">Beschreibung:</label>
-            <textarea id="editDeckDescription" name="description">${deck.description || ''}</textarea>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <h4>Layout</h4>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="editDeckRows">Reihen:</label>
-              <input type="number" id="editDeckRows" name="rows" min="1" max="8" value="${deck.rows}" required>
-            </div>
-            <div class="form-group">
-              <label for="editDeckColumns">Spalten:</label>
-              <input type="number" id="editDeckColumns" name="columns" min="1" max="8" value="${deck.columns}" required>
-            </div>
-          </div>
-          <div class="deck-preview" id="editDeckPreview">
-            <!-- Preview will be generated here -->
-          </div>
-        </div>
-
-        <div class="form-section">
-          <h4>Deck-Typ</h4>
-          <div class="form-group">
-            <label for="editDeckParent">Übergeordnetes Deck:</label>
-            <select id="editDeckParent" name="parentDeckId">
-              <option value="">Haupt-Deck</option>
-              ${this.hotkeyManager.getMainDecks().filter(d => d.id !== deck.id).map(d => 
-                `<option value="${d.id}" ${deck.parentDeckId === d.id ? 'selected' : ''}>${d.name} (Unter-Deck)</option>`
-              ).join('')}
-            </select>
-          </div>
-        </div>
-      </form>
-    `, {
-      primaryButton: { text: 'Speichern', action: () => this.handleEditDeck(deck.id) },
-      secondaryButton: { text: 'Abbrechen', action: () => this.closeDialog() }
-    });
-
-    this.setupEditDeckPreview();
-  }
-
-  setupEditDeckPreview() {
-    const rowsInput = this.currentDialog.querySelector('#editDeckRows');
-    const columnsInput = this.currentDialog.querySelector('#editDeckColumns');
-    const preview = this.currentDialog.querySelector('#editDeckPreview');
-
-    const updatePreview = () => {
-      const rows = parseInt(rowsInput.value) || 4;
-      const columns = parseInt(columnsInput.value) || 4;
-      
-      preview.innerHTML = `
-        <div class="preview-grid" style="grid-template-columns: repeat(${columns}, 1fr); grid-template-rows: repeat(${rows}, 1fr);">
-          ${Array(rows * columns).fill(0).map((_, i) => `
-            <div class="preview-slot">
-              <span class="slot-number">${i + 1}</span>
-            </div>
-          `).join('')}
-        </div>
-        <div class="preview-info">
-          ${rows} × ${columns} = ${rows * columns} Hotkey-Plätze
-        </div>
-      `;
-    };
-
-    rowsInput.addEventListener('input', updatePreview);
-    columnsInput.addEventListener('input', updatePreview);
-    updatePreview();
-  }
-
   handleEditDeck(deckId) {
     const form = this.currentDialog.querySelector('#editDeckForm');
     const formData = new FormData(form);
 
     const deckData = {
       name: formData.get('name'),
-      description: formData.get('description'),
-      rows: parseInt(formData.get('rows')),
-      columns: parseInt(formData.get('columns')),
-      parentDeckId: formData.get('parentDeckId') || null
+      description: formData.get('description')
     };
+
+    // Only update size for main decks
+    const deck = this.hotkeyManager.getDeckById(deckId);
+    if (deck && !deck.isSubDeck) {
+      deckData.rows = parseInt(formData.get('rows'));
+      deckData.columns = parseInt(formData.get('columns'));
+    }
 
     this.hotkeyManager.updateDeck(deckId, deckData);
     
@@ -1094,20 +570,20 @@ class HotkeyDialogManager {
     this.uiManager.showSuccessMessage('Deck aktualisiert!');
   }
 
-  // ===== HOTKEY EDIT DIALOG =====
+  // ===== HOTKEY EDIT DIALOG (COMPLETE) =====
 
   showHotkeyEditDialog(hotkey) {
-    const dialog = this.createDialog('edit-hotkey', `Hotkey bearbeiten: ${hotkey.name}`, `
+    const dialog = this.createDialog('edit-hotkey', `✏️ Hotkey bearbeiten: ${hotkey.name}`, `
       <form class="hotkey-form" id="editHotkeyForm">
         <div class="form-section">
-          <h4>Grundinformationen</h4>
+          <h4>📋 Grundinformationen</h4>
           <div class="form-group">
             <label for="editHotkeyName">Name:</label>
             <input type="text" id="editHotkeyName" name="name" value="${hotkey.name}" required>
           </div>
           <div class="form-group">
             <label for="editHotkeyDescription">Beschreibung:</label>
-            <textarea id="editHotkeyDescription" name="description">${hotkey.description || ''}</textarea>
+            <textarea id="editHotkeyDescription" name="description" rows="2">${hotkey.description || ''}</textarea>
           </div>
           <div class="form-group">
             <label>
@@ -1115,40 +591,203 @@ class HotkeyDialogManager {
               Hotkey aktiviert
             </label>
           </div>
+          ${hotkey.deckId ? `
+            <div class="form-group">
+              <label>Deck:</label>
+              <span class="deck-info">${this.hotkeyManager.getDeckById(hotkey.deckId)?.name || 'Unbekannt'}</span>
+              ${hotkey.position ? `<span class="position-info">Position: ${hotkey.position.row + 1}, ${hotkey.position.col + 1}</span>` : ''}
+            </div>
+          ` : ''}
         </div>
 
         <div class="form-section">
-          <h4>Trigger</h4>
-          <div class="existing-triggers">
-            ${hotkey.triggers.map(trigger => `
-              <div class="trigger-item-edit">
-                <span class="trigger-type-icon">${trigger.type === 'midi' ? '🎹' : trigger.type === 'keyboard' ? '⌨️' : '🖱️'}</span>
+          <h4>🎹 Trigger</h4>
+          <div class="existing-triggers" id="existingTriggers">
+            ${hotkey.triggers.map((trigger, index) => `
+              <div class="learned-trigger" data-trigger-index="${index}">
+                <span class="trigger-icon">${trigger.type === 'midi' ? '🎹' : trigger.type === 'keyboard' ? '⌨️' : '🖱️'}</span>
                 <span class="trigger-description">${trigger.data.description}</span>
                 <button type="button" class="remove-trigger-btn" onclick="this.parentElement.remove()">×</button>
               </div>
             `).join('')}
           </div>
-          <button type="button" class="add-trigger-btn btn-secondary">+ Trigger hinzufügen</button>
+          <div class="trigger-controls">
+            <button type="button" class="btn-secondary" id="editLearnMidiBtn">🎹 MIDI lernen</button>
+            <button type="button" class="btn-secondary" id="editLearnKeyboardBtn">⌨️ Tastatur lernen</button>
+          </div>
+          <div id="editLearnedTrigger" style="display: none;">
+            <div class="learned-trigger">
+              <span id="editTriggerDescription"></span>
+              <button type="button" class="remove-trigger-btn" onclick="document.getElementById('editLearnedTrigger').style.display='none'">×</button>
+            </div>
+          </div>
         </div>
 
         <div class="form-section">
-          <h4>Aktionen</h4>
-          <div class="existing-actions">
+          <h4>⚡ Aktionen (${hotkey.actions.length})</h4>
+          <div class="existing-actions" id="existingActions">
             ${hotkey.actions.map((action, index) => `
-              <div class="action-item-edit" data-action-id="${action.id}">
+              <div class="action-item" data-action-id="${action.id}">
                 <span class="action-order">${index + 1}.</span>
                 <span class="action-description">${this.getActionDisplayText(action)}</span>
-                <button type="button" class="remove-action-btn" onclick="this.parentElement.remove()">×</button>
+                <div class="action-controls">
+                  <button type="button" class="btn-small" onclick="window.hotkeyDialogManager.editAction('${action.id}', '${hotkey.id}')">✏️</button>
+                  <button type="button" class="remove-action-btn" onclick="this.parentElement.parentElement.remove()">×</button>
+                </div>
               </div>
             `).join('')}
           </div>
-          <button type="button" class="add-action-btn btn-secondary">+ Aktion hinzufügen</button>
+          <div class="add-action-section">
+            <select id="editActionType">
+              <option value="">Aktion hinzufügen...</option>
+              <optgroup label="🎬 OBS Studio">
+                <option value="obs_scene_switch">Szene wechseln</option>
+                <option value="obs_source_visibility">Source Ein-/Ausblenden</option>
+                <option value="obs_filter_toggle">Filter umschalten</option>
+                <option value="obs_recording_toggle">Aufnahme umschalten</option>
+                <option value="obs_streaming_toggle">Stream umschalten</option>
+                <option value="obs_raw_request">Raw OBS Request</option>
+              </optgroup>
+              <optgroup label="🔊 Audio">
+                <option value="audio_volume">Lautstärke setzen</option>
+                <option value="audio_mute">Stumm schalten</option>
+              </optgroup>
+              <optgroup label="🎛️ Deck-Steuerung">
+                <option value="deck_switch">Deck wechseln</option>
+                <option value="sub_deck_switch">Unter-Deck wechseln</option>
+              </optgroup>
+              <optgroup label="⏱️ Hilfsmittel">
+                <option value="delay">Verzögerung</option>
+              </optgroup>
+            </select>
+            <button type="button" id="editAddActionBtn" class="btn-secondary">+ Hinzufügen</button>
+          </div>
+          <div id="editActionConfig" style="display: none;"></div>
         </div>
       </form>
     `, {
       primaryButton: { text: 'Speichern', action: () => this.handleEditHotkey(hotkey.id) },
       secondaryButton: { text: 'Abbrechen', action: () => this.closeDialog() }
     });
+
+    this.setupEditHotkeyEvents(hotkey);
+  }
+
+  setupEditHotkeyEvents(hotkey) {
+    const editLearnMidiBtn = this.currentDialog.querySelector('#editLearnMidiBtn');
+    const editLearnKeyboardBtn = this.currentDialog.querySelector('#editLearnKeyboardBtn');
+    const editAddActionBtn = this.currentDialog.querySelector('#editAddActionBtn');
+    const editActionType = this.currentDialog.querySelector('#editActionType');
+
+    editLearnMidiBtn.addEventListener('click', () => this.startEditLearning('midi'));
+    editLearnKeyboardBtn.addEventListener('click', () => this.startEditLearning('keyboard'));
+    editAddActionBtn.addEventListener('click', () => {
+      const actionType = editActionType.value;
+      if (actionType) {
+        this.addActionToEditForm(actionType, hotkey.id);
+        editActionType.value = '';
+      }
+    });
+    editActionType.addEventListener('change', () => this.updateEditActionConfig(editActionType.value));
+  }
+
+  startEditLearning(type) {
+    const editLearnedTrigger = this.currentDialog.querySelector('#editLearnedTrigger');
+    const editTriggerDescription = this.currentDialog.querySelector('#editTriggerDescription');
+    
+    // Show learning state
+    const buttons = this.currentDialog.querySelectorAll('#editLearnMidiBtn, #editLearnKeyboardBtn');
+    buttons.forEach(btn => {
+      btn.textContent = '⏳ Lernen...';
+      btn.disabled = true;
+    });
+
+    this.hotkeyManager.startLearningMode((trigger) => {
+      // Show learned trigger
+      editTriggerDescription.textContent = trigger.data.description;
+      editLearnedTrigger.style.display = 'block';
+      editLearnedTrigger.dataset.trigger = JSON.stringify(trigger);
+      
+      // Reset buttons
+      buttons.forEach(btn => btn.disabled = false);
+      this.currentDialog.querySelector('#editLearnMidiBtn').textContent = '🎹 MIDI lernen';
+      this.currentDialog.querySelector('#editLearnKeyboardBtn').textContent = '⌨️ Tastatur lernen';
+    });
+  }
+
+  updateEditActionConfig(actionType) {
+    const editActionConfig = this.currentDialog.querySelector('#editActionConfig');
+    
+    if (!actionType) {
+      editActionConfig.style.display = 'none';
+      return;
+    }
+
+    editActionConfig.style.display = 'block';
+    editActionConfig.innerHTML = this.getActionConfigHTML(actionType);
+  }
+
+  addActionToEditForm(actionType, hotkeyId) {
+    const config = this.getActionConfigFromForm();
+    if (!config && this.requiresConfig(actionType)) {
+      this.uiManager.showErrorMessage('Konfiguration erforderlich', 'Bitte konfiguriere die Aktion bevor du sie hinzufügst.');
+      return;
+    }
+
+    // Add action to hotkey
+    const success = this.hotkeyManager.addActionToHotkey(hotkeyId, {
+      type: actionType,
+      data: config || {}
+    });
+
+    if (success) {
+      // Refresh the edit dialog
+      const hotkey = this.hotkeyManager.getHotkeyById(hotkeyId);
+      this.closeDialog();
+      this.showHotkeyEditDialog(hotkey);
+    }
+  }
+
+  handleEditHotkey(hotkeyId) {
+    const form = this.currentDialog.querySelector('#editHotkeyForm');
+    const formData = new FormData(form);
+
+    // Update basic properties
+    const updates = {
+      name: formData.get('name'),
+      description: formData.get('description'),
+      enabled: formData.get('enabled') === 'on'
+    };
+
+    this.hotkeyManager.updateHotkey(hotkeyId, updates);
+
+    // Handle new trigger if learned
+    const editLearnedTrigger = this.currentDialog.querySelector('#editLearnedTrigger');
+    if (editLearnedTrigger.style.display !== 'none' && editLearnedTrigger.dataset.trigger) {
+      const trigger = JSON.parse(editLearnedTrigger.dataset.trigger);
+      this.hotkeyManager.addTriggerToHotkey(hotkeyId, trigger);
+    }
+
+    // Remove deleted triggers
+    const hotkey = this.hotkeyManager.getHotkeyById(hotkeyId);
+    const remainingTriggers = this.currentDialog.querySelectorAll('.existing-triggers .learned-trigger');
+    
+    if (remainingTriggers.length < hotkey.triggers.length) {
+      // Some triggers were removed, rebuild trigger list
+      const newTriggers = [];
+      remainingTriggers.forEach(triggerEl => {
+        const index = parseInt(triggerEl.dataset.triggerIndex);
+        if (index < hotkey.triggers.length) {
+          newTriggers.push(hotkey.triggers[index]);
+        }
+      });
+      
+      // Update hotkey with remaining triggers
+      this.hotkeyManager.updateHotkey(hotkeyId, { triggers: newTriggers });
+    }
+
+    this.closeDialog();
+    this.uiManager.showSuccessMessage('Hotkey aktualisiert!');
   }
 
   getActionDisplayText(action) {
@@ -1156,7 +795,11 @@ class HotkeyDialogManager {
       case 'obs_scene_switch':
         return `Szene wechseln: ${action.data.sceneName}`;
       case 'obs_source_visibility':
-        return `Source ${action.data.visible ? 'einblenden' : 'ausblenden'}: ${action.data.sourceName}`;
+        const visibilityText = action.data.visible === 'toggle' ? 'umschalten' : 
+                               action.data.visible ? 'einblenden' : 'ausblenden';
+        return `Source ${visibilityText}: ${action.data.sourceName}`;
+      case 'obs_filter_toggle':
+        return `Filter ${action.data.enabled ? 'aktivieren' : 'deaktivieren'}: ${action.data.filterName} (${action.data.sourceName})`;
       case 'obs_raw_request':
         return `OBS Request: ${action.data.requestType}`;
       case 'deck_switch':
@@ -1166,7 +809,7 @@ class HotkeyDialogManager {
         if (action.data.subDeckId) {
           const subDeck = this.hotkeyManager.getDeckById(action.data.subDeckId);
           const mainDeck = this.hotkeyManager.getDeckById(action.data.mainDeckId);
-          return `Zu Unter-Deck wechseln: ${subDeck?.name || 'Unbekannt'} (${mainDeck?.name || 'Unbekannt'})`;
+          return `Zu Unter-Deck: ${subDeck?.name || 'Unbekannt'} (${mainDeck?.name || 'Unbekannt'})`;
         } else {
           const mainDeck = this.hotkeyManager.getDeckById(action.data.mainDeckId);
           return `Zurück zu Haupt-Deck: ${mainDeck?.name || 'Unbekannt'}`;
@@ -1186,414 +829,296 @@ class HotkeyDialogManager {
     }
   }
 
-  handleEditHotkey(hotkeyId) {
-    const form = this.currentDialog.querySelector('#editHotkeyForm');
-    const formData = new FormData(form);
+  showCreateHotkeyDialog(options = {}) {
+    const dialog = this.createDialog('create-hotkey', '🎹 Hotkey erstellen', `
+      <form class="hotkey-form" id="hotkeyForm">
+        <div class="form-section">
+          <h4>📋 Grundinformationen</h4>
+          <div class="form-group">
+            <label for="hotkeyName">Name:</label>
+            <input type="text" id="hotkeyName" name="name" placeholder="Mein Hotkey" required>
+          </div>
+          <div class="form-group">
+            <label for="hotkeyDescription">Beschreibung:</label>
+            <textarea id="hotkeyDescription" name="description" placeholder="Optionale Beschreibung" rows="2"></textarea>
+          </div>
+          ${options.deckId ? `
+            <div class="form-group">
+              <label>Deck:</label>
+              <span class="deck-info">${this.hotkeyManager.getDeckById(options.deckId)?.name || 'Unbekannt'}</span>
+              ${options.position ? `<span class="position-info">Position: ${options.position.row + 1}, ${options.position.col + 1}</span>` : ''}
+            </div>
+          ` : ''}
+        </div>
 
-    const hotkeyData = {
-      name: formData.get('name'),
-      description: formData.get('description'),
-      enabled: formData.get('enabled') === 'on'
-    };
+        <div class="form-section">
+          <h4>🎹 Trigger (optional)</h4>
+          <p class="help-text">Lasse leer um nur per Klick auszuführen</p>
+          <div class="trigger-section">
+            <button type="button" class="btn-secondary" id="learnMidiBtn">🎹 MIDI lernen</button>
+            <button type="button" class="btn-secondary" id="learnKeyboardBtn">⌨️ Tastatur lernen</button>
+            <div id="learnedTrigger" style="display: none;">
+              <div class="learned-trigger">
+                <span id="triggerDescription"></span>
+                <button type="button" class="remove-trigger-btn" onclick="document.getElementById('learnedTrigger').style.display='none'">×</button>
+              </div>
+            </div>
+          </div>
+        </div>
 
-    this.hotkeyManager.updateHotkey(hotkeyId, hotkeyData);
-    
-    this.closeDialog();
-    this.uiManager.showSuccessMessage('Hotkey aktualisiert!');
+        <div class="form-section">
+          <h4>⚡ Aktion</h4>
+          <div class="action-selection">
+            <select id="actionType" name="actionType">
+              <option value="">Keine Aktion (nur als Platzhalter)</option>
+              <optgroup label="🎬 OBS Studio">
+                <option value="obs_scene_switch">Szene wechseln</option>
+                <option value="obs_source_visibility">Source Ein-/Ausblenden</option>
+                <option value="obs_filter_toggle">Filter umschalten</option>
+                <option value="obs_recording_toggle">Aufnahme umschalten</option>
+                <option value="obs_streaming_toggle">Stream umschalten</option>
+                <option value="obs_raw_request">Raw OBS Request</option>
+              </optgroup>
+              <optgroup label="🔊 Audio">
+                <option value="audio_volume">Lautstärke setzen</option>
+                <option value="audio_mute">Stumm schalten</option>
+              </optgroup>
+              <optgroup label="🎛️ Deck-Steuerung">
+                <option value="deck_switch">Deck wechseln</option>
+                <option value="sub_deck_switch">Unter-Deck wechseln</option>
+              </optgroup>
+              <optgroup label="⏱️ Hilfsmittel">
+                <option value="delay">Verzögerung</option>
+              </optgroup>
+            </select>
+          </div>
+          <div id="actionConfig" style="display: none;"></div>
+        </div>
+      </form>
+    `, {
+      primaryButton: { text: 'Erstellen', action: () => this.handleCreateHotkey(options) },
+      secondaryButton: { text: 'Abbrechen', action: () => this.closeDialog() }
+    });
+
+    this.setupSimpleHotkeyEvents();
   }
 
-  showDeckLearningDialog(deck) {
-    const dialog = this.createDialog('deck-learning', `Deck lernen: ${deck.name}`, `
-      <div class="deck-learning-content">
-        <div class="deck-info">
-          <h4>Deck: ${deck.name}</h4>
-          <p>Layout: ${deck.rows} × ${deck.columns} (${deck.rows * deck.columns} Plätze)</p>
-          ${deck.description ? `<p class="deck-description">${deck.description}</p>` : ''}
-        </div>
+  setupSimpleHotkeyEvents() {
+    const learnMidiBtn = this.currentDialog.querySelector('#learnMidiBtn');
+    const learnKeyboardBtn = this.currentDialog.querySelector('#learnKeyboardBtn');
+    const actionType = this.currentDialog.querySelector('#actionType');
 
-        <div class="learning-instructions">
-          <h4>Anleitung:</h4>
-          <ol>
-            <li>Klicke auf "Lernen starten"</li>
-            <li>Drücke nacheinander die Buttons/Regler auf deinem MIDI-Controller</li>
-            <li>Die Hotkeys werden automatisch den Deck-Positionen zugeordnet</li>
-            <li>Leer gelassene Positionen können später einzeln belegt werden</li>
-          </ol>
-        </div>
+    learnMidiBtn.addEventListener('click', () => this.startSimpleLearning('midi'));
+    learnKeyboardBtn.addEventListener('click', () => this.startSimpleLearning('keyboard'));
+    actionType.addEventListener('change', () => this.updateActionConfig(actionType.value));
+  }
 
-        <div class="deck-preview-learning">
-          <div class="preview-grid" style="grid-template-columns: repeat(${deck.columns}, 1fr);">
-            ${this.renderDeckLearningPreview(deck)}
+  startSimpleLearning(type) {
+    const learnedTrigger = this.currentDialog.querySelector('#learnedTrigger');
+    const triggerDescription = this.currentDialog.querySelector('#triggerDescription');
+    
+    // Show learning state
+    const buttons = this.currentDialog.querySelectorAll('#learnMidiBtn, #learnKeyboardBtn');
+    buttons.forEach(btn => {
+      btn.textContent = '⏳ Lernen...';
+      btn.disabled = true;
+    });
+
+    this.hotkeyManager.startLearningMode((trigger) => {
+      // Show learned trigger
+      triggerDescription.textContent = trigger.data.description;
+      learnedTrigger.style.display = 'block';
+      learnedTrigger.dataset.trigger = JSON.stringify(trigger);
+      
+      // Reset buttons
+      buttons.forEach(btn => {
+        btn.disabled = false;
+      });
+      this.currentDialog.querySelector('#learnMidiBtn').textContent = '🎹 MIDI lernen';
+      this.currentDialog.querySelector('#learnKeyboardBtn').textContent = '⌨️ Tastatur lernen';
+    });
+  }
+
+  updateActionConfig(actionType) {
+    const actionConfig = this.currentDialog.querySelector('#actionConfig');
+    
+    if (!actionType) {
+      actionConfig.style.display = 'none';
+      return;
+    }
+
+    actionConfig.style.display = 'block';
+    
+    switch (actionType) {
+      case 'obs_scene_switch':
+        actionConfig.innerHTML = `
+          <div class="form-group">
+            <label for="sceneName">Szene:</label>
+            <input type="text" id="sceneName" name="sceneName" placeholder="Szene eingeben" required>
+          </div>
+        `;
+        break;
+      case 'deck_switch':
+        const decks = this.hotkeyManager.getAllDecks();
+        actionConfig.innerHTML = `
+          <div class="form-group">
+            <label for="deckId">Ziel-Deck:</label>
+            <select id="deckId" name="deckId" required>
+              <option value="">Deck auswählen...</option>
+              ${decks.map(deck => `<option value="${deck.id}">${deck.name}</option>`).join('')}
+            </select>
+          </div>
+        `;
+        break;
+      default:
+        actionConfig.innerHTML = '<p>Keine weitere Konfiguration erforderlich</p>';
+    }
+  }
+
+  handleCreateHotkey(options = {}) {
+    const form = this.currentDialog.querySelector('#hotkeyForm');
+    const formData = new FormData(form);
+
+    // Create hotkey
+    const hotkey = this.hotkeyManager.createHotkey({
+      name: formData.get('name'),
+      description: formData.get('description'),
+      deckId: options.deckId || null,
+      position: options.position || null
+    });
+
+    // Add trigger if learned
+    const learnedTrigger = this.currentDialog.querySelector('#learnedTrigger');
+    if (learnedTrigger.style.display !== 'none' && learnedTrigger.dataset.trigger) {
+      const trigger = JSON.parse(learnedTrigger.dataset.trigger);
+      this.hotkeyManager.addTriggerToHotkey(hotkey.id, trigger);
+    }
+
+    // Add action if configured
+    const actionType = formData.get('actionType');
+    if (actionType) {
+      let actionData = {};
+      
+      switch (actionType) {
+        case 'obs_scene_switch':
+          actionData = { sceneName: formData.get('sceneName') };
+          break;
+        case 'deck_switch':
+          actionData = { deckId: formData.get('deckId') };
+          break;
+      }
+
+      if (Object.keys(actionData).length > 0) {
+        this.hotkeyManager.addActionToHotkey(hotkey.id, {
+          type: actionType,
+          data: actionData
+        });
+      }
+    }
+
+    this.closeDialog();
+    this.uiManager.showSuccessMessage(`Hotkey "${hotkey.name}" erstellt!`);
+  }
+
+  // ===== QUICK LEARNING =====
+
+  startQuickLearning() {
+    this.uiManager.showInfoMessage('Quick Learning', 'Verwende "Deck Hotkeys lernen" für eine vollständige Deck-Konfiguration oder erstelle einzelne Hotkeys über das ➕ Menü.');
+  }
+
+  // ===== IMPORT/EXPORT (SIMPLIFIED) =====
+
+  showImportExportDialog() {
+    const stats = this.hotkeyManager.getStats();
+    
+    const dialog = this.createDialog('import-export', '💾 Import / Export', `
+      <div class="import-export-content">
+        <div class="current-config">
+          <h4>📊 Aktuelle Konfiguration:</h4>
+          <div class="config-stats">
+            <div class="stat-item">
+              <span class="stat-number">${stats.totalHotkeys}</span>
+              <span class="stat-label">Hotkeys</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-number">${stats.totalDecks}</span>
+              <span class="stat-label">Decks</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-number">${stats.totalExecutions}</span>
+              <span class="stat-label">Ausführungen</span>
+            </div>
           </div>
         </div>
 
-        <div class="learning-controls">
-          <button type="button" class="btn-primary" id="startDeckLearning">🎓 Lernen starten</button>
-          <button type="button" class="btn-secondary" id="skipPosition" style="display: none;">⏭️ Position überspringen</button>
-          <button type="button" class="btn-secondary" id="resetDeckLearning">🔄 Zurücksetzen</button>
+        <div class="export-section">
+          <h4>📤 Export:</h4>
+          <p>Exportiere deine aktuelle Hotkey-Konfiguration</p>
+          <button type="button" class="btn-primary" id="exportBtn">📤 Konfiguration exportieren</button>
         </div>
 
-        <div class="learning-progress" id="learningProgress" style="display: none;">
-          <div class="progress-info">
-            <span id="currentPosition">Position 1,1</span>
-            <span id="progressText">0 / ${deck.rows * deck.columns}</span>
-          </div>
-          <div class="progress-bar">
-            <div class="progress-fill" id="progressFill"></div>
-          </div>
+        <div class="import-section">
+          <h4>📥 Import:</h4>
+          <p>Importiere eine zuvor exportierte Konfiguration</p>
+          <p class="warning-text">⚠️ Ersetzt die aktuelle Konfiguration!</p>
+          <input type="file" id="importFile" accept=".json" style="display: none;">
+          <button type="button" class="btn-secondary" id="importBtn">📥 Datei auswählen</button>
+          <span id="fileName" class="file-name"></span>
         </div>
       </div>
     `, {
       secondaryButton: { text: 'Schließen', action: () => this.closeDialog() }
     });
 
-    this.setupDeckLearningEvents(deck);
+    this.setupImportExportEvents();
   }
 
-  renderDeckLearningPreview(deck) {
-    const totalSlots = deck.rows * deck.columns;
-    let html = '';
+  setupImportExportEvents() {
+    const exportBtn = this.currentDialog.querySelector('#exportBtn');
+    const importBtn = this.currentDialog.querySelector('#importBtn');
+    const importFile = this.currentDialog.querySelector('#importFile');
 
-    for (let i = 0; i < totalSlots; i++) {
-      const row = Math.floor(i / deck.columns);
-      const col = i % deck.columns;
-      
-      html += `
-        <div class="learning-slot" data-position="${row},${col}" data-index="${i}">
-          <span class="slot-position">${row + 1},${col + 1}</span>
-          <div class="slot-status">⏳</div>
-        </div>
-      `;
-    }
-
-    return html;
+    exportBtn.addEventListener('click', () => this.exportConfiguration());
+    importBtn.addEventListener('click', () => importFile.click());
+    importFile.addEventListener('change', (e) => this.importConfiguration(e.target.files[0]));
   }
 
-  setupDeckLearningEvents(deck) {
-    const startBtn = this.currentDialog.querySelector('#startDeckLearning');
-    const skipBtn = this.currentDialog.querySelector('#skipPosition');
-    const resetBtn = this.currentDialog.querySelector('#resetDeckLearning');
+  exportConfiguration() {
+    const config = this.hotkeyManager.exportConfiguration();
+    const dataStr = JSON.stringify(config, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
 
-    startBtn.addEventListener('click', () => {
-      this.startDeckLearning(deck);
-    });
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `obs-midi-mixer-${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
 
-    skipBtn.addEventListener('click', () => {
-      this.skipCurrentPosition();
-    });
-
-    resetBtn.addEventListener('click', () => {
-      this.resetDeckLearning(deck);
-    });
+    URL.revokeObjectURL(url);
+    this.uiManager.showSuccessMessage('Konfiguration exportiert!');
   }
 
-  startDeckLearning(deck) {
-    this.deckLearningState = {
-      deck: deck,
-      currentIndex: 0,
-      totalSlots: deck.rows * deck.columns,
-      learnedHotkeys: []
-    };
-
-    // Update UI
-    const startBtn = this.currentDialog.querySelector('#startDeckLearning');
-    const skipBtn = this.currentDialog.querySelector('#skipPosition');
-    const progress = this.currentDialog.querySelector('#learningProgress');
-
-    startBtn.style.display = 'none';
-    skipBtn.style.display = 'inline-block';
-    progress.style.display = 'block';
-
-    this.advanceDeckLearning();
-  }
-
-  advanceDeckLearning() {
-    if (!this.deckLearningState) return;
-
-    const { deck, currentIndex, totalSlots } = this.deckLearningState;
-
-    if (currentIndex >= totalSlots) {
-      this.completeDeckLearning();
-      return;
-    }
-
-    const row = Math.floor(currentIndex / deck.columns);
-    const col = currentIndex % deck.columns;
-
-    // Update UI
-    this.updateDeckLearningProgress(row, col);
-
-    // Highlight current slot
-    this.highlightCurrentSlot(currentIndex);
-
-    // Start learning for this position
-    this.hotkeyManager.startLearningMode((trigger) => {
-      this.onDeckPositionLearned(trigger, row, col);
-    });
-  }
-
-  updateDeckLearningProgress(row, col) {
-    const currentPosition = this.currentDialog.querySelector('#currentPosition');
-    const progressText = this.currentDialog.querySelector('#progressText');
-    const progressFill = this.currentDialog.querySelector('#progressFill');
-
-    const { currentIndex, totalSlots } = this.deckLearningState;
-    const percentage = (currentIndex / totalSlots) * 100;
-
-    currentPosition.textContent = `Position ${row + 1}, ${col + 1}`;
-    progressText.textContent = `${currentIndex} / ${totalSlots}`;
-    progressFill.style.width = `${percentage}%`;
-  }
-
-  highlightCurrentSlot(index) {
-    // Remove previous highlights
-    const slots = this.currentDialog.querySelectorAll('.learning-slot');
-    slots.forEach(slot => slot.classList.remove('current'));
-
-    // Highlight current slot
-    const currentSlot = this.currentDialog.querySelector(`[data-index="${index}"]`);
-    if (currentSlot) {
-      currentSlot.classList.add('current');
-    }
-  }
-
-  onDeckPositionLearned(trigger, row, col) {
-    const { deck } = this.deckLearningState;
-
-    // Create hotkey for this position
-    const hotkey = this.hotkeyManager.createHotkey({
-      name: `${deck.name} ${row + 1},${col + 1}`,
-      description: `Deck-Hotkey für Position ${row + 1}, ${col + 1}`,
-      deckId: deck.id,
-      position: { row, col }
-    });
-
-    // Add trigger
-    this.hotkeyManager.addTriggerToHotkey(hotkey.id, trigger);
-
-    // Update slot status
-    const currentSlot = this.currentDialog.querySelector(`[data-index="${this.deckLearningState.currentIndex}"]`);
-    if (currentSlot) {
-      currentSlot.querySelector('.slot-status').textContent = '✅';
-      currentSlot.classList.remove('current');
-      currentSlot.classList.add('learned');
-    }
-
-    // Add to learned hotkeys
-    this.deckLearningState.learnedHotkeys.push(hotkey);
-    this.deckLearningState.currentIndex++;
-
-    // Continue with next position
-    setTimeout(() => {
-      this.advanceDeckLearning();
-    }, 500);
-  }
-
-  skipCurrentPosition() {
-    if (!this.deckLearningState) return;
-
-    this.hotkeyManager.stopLearningMode();
-
-    // Update slot status
-    const currentSlot = this.currentDialog.querySelector(`[data-index="${this.deckLearningState.currentIndex}"]`);
-    if (currentSlot) {
-      currentSlot.querySelector('.slot-status').textContent = '⏭️';
-      currentSlot.classList.remove('current');
-      currentSlot.classList.add('skipped');
-    }
-
-    this.deckLearningState.currentIndex++;
-    this.advanceDeckLearning();
-  }
-
-  completeDeckLearning() {
-    const { learnedHotkeys } = this.deckLearningState;
-
-    // Update UI
-    const skipBtn = this.currentDialog.querySelector('#skipPosition');
-    const startBtn = this.currentDialog.querySelector('#startDeckLearning');
-
-    skipBtn.style.display = 'none';
-    startBtn.textContent = '✅ Abgeschlossen';
-    startBtn.style.display = 'inline-block';
-    startBtn.disabled = true;
-
-    this.deckLearningState = null;
-    this.uiManager.showSuccessMessage(`Deck-Lernen abgeschlossen! ${learnedHotkeys.length} Hotkeys erstellt.`);
-  }
-
-  resetDeckLearning(deck) {
-    if (this.deckLearningState) {
-      this.hotkeyManager.stopLearningMode();
-    }
-
-    // Reset UI
-    const slots = this.currentDialog.querySelector('.preview-grid');
-    slots.innerHTML = this.renderDeckLearningPreview(deck);
-
-    const startBtn = this.currentDialog.querySelector('#startDeckLearning');
-    const skipBtn = this.currentDialog.querySelector('#skipPosition');
-    const progress = this.currentDialog.querySelector('#learningProgress');
-
-    startBtn.style.display = 'inline-block';
-    startBtn.textContent = '🎓 Lernen starten';
-    startBtn.disabled = false;
-    skipBtn.style.display = 'none';
-    progress.style.display = 'none';
-
-    this.deckLearningState = null;
-  }
-
-  // ===== OBS DATA REFRESH METHODS =====
-
-  async refreshObsData(buttonElement, dataType) {
-    if (!window.obsManager || !window.obsManager.isConnected) {
-      this.uiManager.showErrorMessage('OBS nicht verbunden', 'Bitte verbinde dich zuerst mit OBS Studio.');
-      return;
-    }
-
-    const originalText = buttonElement.textContent;
-    buttonElement.textContent = '⏳ Laden...';
-    buttonElement.disabled = true;
+  async importConfiguration(file) {
+    if (!file) return;
 
     try {
-      if (dataType === 'scenes') {
-        const scenes = await window.obsManager.getScenes();
-        this.updateSceneDatalist(scenes);
-        this.uiManager.showSuccessMessage(`${scenes.length} Szenen geladen`);
-      } else if (dataType === 'sources') {
-        const sources = await window.obsManager.getAllSources();
-        this.updateSourceDatalist(sources);
-        this.uiManager.showSuccessMessage(`${sources.length} Sources geladen`);
+      const text = await file.text();
+      const config = JSON.parse(text);
+
+      if (confirm('Aktuelle Konfiguration ersetzen? Alle bestehenden Hotkeys und Decks gehen verloren.')) {
+        this.hotkeyManager.importConfiguration(config);
+        this.closeDialog();
+        this.uiManager.showSuccessMessage('Konfiguration importiert!');
       }
     } catch (error) {
-      console.error('Error refreshing OBS data:', error);
-      this.uiManager.showErrorMessage('Fehler beim Laden', 'OBS-Daten konnten nicht geladen werden.');
-    } finally {
-      buttonElement.textContent = originalText;
-      buttonElement.disabled = false;
+      console.error('Import error:', error);
+      this.uiManager.showErrorMessage('Import-Fehler', 'Die Datei konnte nicht gelesen werden.');
     }
   }
 
-  updateSceneDatalist(scenes) {
-    const sceneDataLists = this.currentDialog.querySelectorAll('#sceneList, #sceneListSource');
-    const scenesHtml = scenes.map(scene => {
-      const sceneName = scene.sceneName || scene.name || scene;
-      return `<option value="${sceneName}">${sceneName}</option>`;
-    }).join('');
-
-    sceneDataLists.forEach(datalist => {
-      datalist.innerHTML = scenesHtml;
-    });
-  }
-
-  updateSourceDatalist(sources) {
-    const sourceDataLists = this.currentDialog.querySelectorAll('#sourceList, #sourceListFilter');
-    const sourcesHtml = sources.map(source => {
-      const sourceName = source.inputName || source.sourceName || source.name || source;
-      return `<option value="${sourceName}">${sourceName}</option>`;
-    }).join('');
-
-    sourceDataLists.forEach(datalist => {
-      datalist.innerHTML = sourcesHtml;
-    });
-  }
-
-  async loadSourcesForScene(sceneName, actionContainer) {
-    if (!sceneName || !window.obsManager || !window.obsManager.isConnected) {
-      return;
-    }
-
-    const sourceDatalist = actionContainer.querySelector('#sourceList');
-    const helpText = actionContainer.querySelector('.help-text');
-    
-    if (!sourceDatalist) return;
-
-    try {
-      helpText.textContent = '⏳ Sources werden geladen...';
-      const sceneItems = await window.obsManager.getSceneItems(sceneName);
-      
-      const sourcesHtml = sceneItems.map(item => {
-        const sourceName = item.sourceName || item.inputName || item.name || item;
-        return `<option value="${sourceName}">${sourceName}</option>`;
-      }).join('');
-      
-      sourceDatalist.innerHTML = sourcesHtml;
-      helpText.textContent = `${sceneItems.length} Sources in ${sceneName} gefunden`;
-    } catch (error) {
-      console.error('Error loading scene sources:', error);
-      sourceDatalist.innerHTML = '';
-      helpText.textContent = 'Fehler beim Laden der Scene-Sources';
-    }
-  }
-
-  async loadFiltersForSource(sourceName, actionContainer) {
-    if (!sourceName || !window.obsManager || !window.obsManager.isConnected) {
-      return;
-    }
-
-    const filterDatalist = actionContainer.querySelector('#filterList');
-    const helpText = actionContainer.querySelector('.help-text');
-    
-    if (!filterDatalist) return;
-
-    try {
-      helpText.textContent = '⏳ Filter werden geladen...';
-      const filters = await window.obsManager.getSourceFilters(sourceName);
-      
-      const filtersHtml = filters.map(filter => {
-        const filterName = filter.filterName || filter.name || filter;
-        return `<option value="${filterName}">${filterName}</option>`;
-      }).join('');
-      
-      filterDatalist.innerHTML = filtersHtml;
-      helpText.textContent = `${filters.length} Filter für ${sourceName} gefunden`;
-    } catch (error) {
-      console.error('Error loading filters:', error);
-      filterDatalist.innerHTML = '';
-      helpText.textContent = 'Fehler beim Laden der Filter';
-    }
-  }
-
-  // ===== SUB-DECK SWITCH HELPERS =====
-
-  updateSubDeckOptions(mainDeckId, actionContainer) {
-    const subDeckSelect = actionContainer.querySelector('select[name="subDeckId"]');
-    if (!subDeckSelect) return;
-
-    if (!mainDeckId) {
-      subDeckSelect.innerHTML = '<option value="">Unter-Deck auswählen...</option>';
-      return;
-    }
-
-    const subDecks = this.hotkeyManager.getSubDecks(mainDeckId);
-    const subDecksHtml = subDecks.map(deck => 
-      `<option value="${deck.id}">${deck.name}</option>`
-    ).join('');
-
-    subDeckSelect.innerHTML = `
-      <option value="">Unter-Deck auswählen...</option>
-      ${subDecksHtml}
-    `;
-  }
-
-  toggleSubDeckOptions(actionType, actionContainer) {
-    const subDeckSelection = actionContainer.querySelector('.subdeck-selection');
-    if (!subDeckSelection) return;
-
-    if (actionType === 'switch_to_subdeck') {
-      subDeckSelection.style.display = 'block';
-      subDeckSelection.querySelector('select').setAttribute('required', 'required');
-    } else {
-      subDeckSelection.style.display = 'none';
-      subDeckSelection.querySelector('select').removeAttribute('required');
-    }
-  }
-
-  // ===== UTILITY METHODS =====
+  // ===== DIALOG UTILITIES =====
 
   createDialog(id, title, content, buttons = {}) {
-    // Remove existing dialog
     this.closeDialog();
 
     const overlay = document.createElement('div');
@@ -1601,7 +1126,7 @@ class HotkeyDialogManager {
     overlay.id = `dialog-${id}`;
 
     overlay.innerHTML = `
-      <div class="modal-content large">
+      <div class="modal-content">
         <div class="modal-header">
           <h3>${title}</h3>
           <button class="modal-close" onclick="window.hotkeyDialogManager.closeDialog()">×</button>
@@ -1638,24 +1163,8 @@ class HotkeyDialogManager {
 
     // Close on outside click
     overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) {
-        this.closeDialog();
-      }
+      if (e.target === overlay) this.closeDialog();
     });
-
-    // ESC key support
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') {
-        this.closeDialog();
-        document.removeEventListener('keydown', handleEscape);
-      }
-    };
-    document.addEventListener('keydown', handleEscape);
-
-    // Force refresh of styles
-    setTimeout(() => {
-      overlay.style.display = 'flex';
-    }, 10);
 
     return overlay;
   }
@@ -1667,11 +1176,6 @@ class HotkeyDialogManager {
     }
 
     // Stop any ongoing learning
-    if (this.learningState) {
-      this.hotkeyManager.stopLearningMode();
-      this.learningState = null;
-    }
-
     if (this.deckLearningState) {
       this.hotkeyManager.stopLearningMode();
       this.deckLearningState = null;
@@ -1680,5 +1184,5 @@ class HotkeyDialogManager {
 }
 
 // Export for global access
-console.log('HotkeyDialogManager: Dialog system loaded');
+console.log('HotkeyDialogManager: Modern dialog system loaded - focus on deck learning');
 window.HotkeyDialogManager = HotkeyDialogManager;

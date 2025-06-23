@@ -510,19 +510,43 @@ class HotkeyManager {
   }
 
   async executeDeckSwitch(data) {
-    const deck = this.getDeckById(data.deckId);
-    if (!deck) {
+    // Validierung der Eingabedaten
+    if (!data || !data.deckId) {
+      throw new Error('Invalid deck switch data: deckId is required');
+    }
+    
+    const targetDeck = this.getDeckById(data.deckId);
+    if (!targetDeck) {
       throw new Error(`Deck with ID ${data.deckId} not found`);
     }
     
-    if (deck.isSubDeck) {
-      // If it's a sub-deck, switch to it
-      return this.switchToSubDeck(deck.parentDeckId, deck.id);
+    console.log(`HotkeyManager: Executing deck switch to: ${targetDeck.name} (${targetDeck.isSubDeck ? 'Sub-Deck' : 'Main-Deck'})`);
+    
+    if (targetDeck.isSubDeck) {
+      // Wenn Ziel ein Sub-Deck ist: Wechsle zu diesem Sub-Deck
+      console.log(`HotkeyManager: Switching to sub-deck "${targetDeck.name}"`);
+      return this.switchToSubDeck(targetDeck.parentDeckId, targetDeck.id);
     } else {
-      // If it's a main deck, we could implement main deck switching logic here
-      // For now, just log that this deck would be activated
-      console.log(`HotkeyManager: Would switch to main deck: ${deck.name}`);
-      return true;
+      // Wenn Ziel ein Main-Deck ist: Prüfe ob gerade ein Sub-Deck aktiv ist
+      const isShowingSubDeck = this.isShowingSubDeck(targetDeck.id);
+      
+      if (isShowingSubDeck) {
+        // Falls Sub-Deck aktiv ist: Wechsle zurück zum Main-Deck
+        console.log(`HotkeyManager: Switching back to main deck "${targetDeck.name}" from sub-deck`);
+        return this.switchBackToMainDeck(targetDeck.id);
+      } else {
+        // Falls Main-Deck bereits aktiv: Mache nichts oder zeige Info
+        console.log(`HotkeyManager: Main deck "${targetDeck.name}" is already active`);
+        
+        // Emit event für UI-Feedback
+        this.emit('deckSwitched', {
+          deckId: targetDeck.id,
+          deck: targetDeck,
+          alreadyActive: true
+        });
+        
+        return true;
+      }
     }
   }
 
